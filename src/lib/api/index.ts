@@ -1,0 +1,244 @@
+import { apiClient, unwrap } from './client';
+import type {
+  Video,
+  PaginatedResponse,
+  Category,
+  AuthResponse,
+  DashboardStats,
+  UploadTask,
+  B2StorageKey,
+  CreateB2StorageKeyInput,
+  AdminInvitation,
+  InvitationPreview,
+  StorageObjectsResponse,
+  CreateInvitationResult,
+  User,
+} from './types';
+
+export interface VideoQueryParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  category?: string;
+  tag?: string;
+  sortBy?: string;
+  sortOrder?: 'ASC' | 'DESC';
+}
+
+export const videosApi = {
+  list: async (params?: VideoQueryParams): Promise<PaginatedResponse<Video>> => {
+    const response = await apiClient.get('/videos', { params });
+    return unwrap(response);
+  },
+
+  trending: async (limit = 20): Promise<Video[]> => {
+    const response = await apiClient.get('/videos/trending', { params: { limit } });
+    return unwrap(response);
+  },
+
+  latest: async (limit = 20): Promise<Video[]> => {
+    const response = await apiClient.get('/videos/latest', { params: { limit } });
+    return unwrap(response);
+  },
+
+  getBySlug: async (slug: string): Promise<Video> => {
+    const response = await apiClient.get(`/watch/${slug}`);
+    return unwrap(response);
+  },
+
+  search: async (params: VideoQueryParams): Promise<PaginatedResponse<Video>> => {
+    const response = await apiClient.get('/search', { params });
+    return unwrap(response);
+  },
+};
+
+export const categoriesApi = {
+  list: async (): Promise<Category[]> => {
+    const response = await apiClient.get('/categories');
+    return unwrap(response);
+  },
+};
+
+export const authApi = {
+  login: async (email: string, password: string): Promise<AuthResponse> => {
+    const response = await apiClient.post('/auth/login', { email, password });
+    return unwrap(response);
+  },
+
+  register: async (
+    email: string,
+    password: string,
+    displayName: string,
+  ): Promise<AuthResponse> => {
+    const response = await apiClient.post('/auth/register', { email, password, displayName });
+    return unwrap(response);
+  },
+
+  logout: async (): Promise<void> => {
+    const response = await apiClient.post('/auth/logout');
+    unwrap(response);
+  },
+
+  me: async (): Promise<User> => {
+    const response = await apiClient.get('/auth/me');
+    return unwrap(response);
+  },
+
+  previewInvitation: async (token: string): Promise<InvitationPreview> => {
+    const response = await apiClient.get(`/auth/invitations/${token}`);
+    return unwrap(response);
+  },
+
+  acceptInvitation: async (
+    token: string,
+    displayName: string,
+    password: string,
+  ): Promise<AuthResponse> => {
+    const response = await apiClient.post('/auth/accept-invitation', {
+      token,
+      displayName,
+      password,
+    });
+    return unwrap(response);
+  },
+};
+
+export const adminApi = {
+  dashboard: async (): Promise<DashboardStats> => {
+    const response = await apiClient.get('/admin/dashboard');
+    return unwrap(response);
+  },
+
+  uploads: async (): Promise<UploadTask[]> => {
+    const response = await apiClient.get('/admin/uploads');
+    return unwrap(response);
+  },
+
+  failedUploads: async (): Promise<UploadTask[]> => {
+    const response = await apiClient.get('/admin/uploads/failed');
+    return unwrap(response);
+  },
+
+  videos: async (): Promise<Video[]> => {
+    const response = await apiClient.get('/admin/videos');
+    return unwrap(response);
+  },
+
+  publish: async (id: string): Promise<void> => {
+    const response = await apiClient.post(`/admin/videos/${id}/publish`);
+    unwrap(response);
+  },
+
+  unpublish: async (id: string): Promise<void> => {
+    const response = await apiClient.post(`/admin/videos/${id}/unpublish`);
+    unwrap(response);
+  },
+
+  deleteVideo: async (id: string): Promise<void> => {
+    const response = await apiClient.delete(`/admin/videos/${id}`);
+    unwrap(response);
+  },
+
+  bulkDeleteVideos: async (ids: string[]): Promise<{ deleted: number }> => {
+    const response = await apiClient.post('/admin/videos/bulk-delete', { ids });
+    return unwrap(response);
+  },
+
+  retryUpload: async (taskId: string): Promise<void> => {
+    const response = await apiClient.post(`/admin/uploads/${taskId}/retry`);
+    unwrap(response);
+  },
+
+  storageKeys: async (): Promise<B2StorageKey[]> => {
+    const response = await apiClient.get('/admin/storage-keys');
+    return unwrap(response);
+  },
+
+  createStorageKey: async (input: CreateB2StorageKeyInput): Promise<B2StorageKey> => {
+    const response = await apiClient.post('/admin/storage-keys', input);
+    return unwrap(response);
+  },
+
+  testStorageKey: async (input: CreateB2StorageKeyInput): Promise<{ ok: boolean }> => {
+    const response = await apiClient.post('/admin/storage-keys/test', input);
+    return unwrap(response);
+  },
+
+  updateStorageKey: async (
+    id: string,
+    data: Partial<Pick<B2StorageKey, 'name' | 'priority' | 'isActive'>>,
+  ): Promise<B2StorageKey> => {
+    const response = await apiClient.patch(`/admin/storage-keys/${id}`, data);
+    return unwrap(response);
+  },
+
+  syncStorageKeyUsage: async (id: string): Promise<B2StorageKey> => {
+    const response = await apiClient.post(`/admin/storage-keys/${id}/sync-usage`);
+    return unwrap(response);
+  },
+
+  syncAllStorageKeyUsage: async (): Promise<B2StorageKey[]> => {
+    const response = await apiClient.post('/admin/storage-keys/sync-all-usage');
+    return unwrap(response);
+  },
+
+  deactivateStorageKey: async (id: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete(`/admin/storage-keys/${id}`);
+    return unwrap(response);
+  },
+
+  invitations: async (): Promise<AdminInvitation[]> => {
+    const response = await apiClient.get('/admin/invitations');
+    return unwrap(response);
+  },
+
+  createInvitation: async (email: string): Promise<CreateInvitationResult> => {
+    const response = await apiClient.post('/admin/invitations', { email });
+    return unwrap(response);
+  },
+
+  resendInvitation: async (id: string): Promise<CreateInvitationResult> => {
+    const response = await apiClient.post(`/admin/invitations/${id}/resend`);
+    return unwrap(response);
+  },
+
+  revokeInvitation: async (id: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete(`/admin/invitations/${id}`);
+    return unwrap(response);
+  },
+
+  listStorageObjects: async (
+    keyId: string,
+    params?: { continuationToken?: string; prefix?: string },
+  ): Promise<StorageObjectsResponse> => {
+    const response = await apiClient.get(`/admin/storage-keys/${keyId}/objects`, { params });
+    return unwrap(response);
+  },
+
+  getStorageObjectUrl: async (keyId: string, objectKey: string): Promise<{ url: string }> => {
+    const response = await apiClient.get(`/admin/storage-keys/${keyId}/objects/signed-url`, {
+      params: { key: objectKey },
+    });
+    return unwrap(response);
+  },
+
+  deleteStorageObject: async (
+    keyId: string,
+    objectKey: string,
+  ): Promise<{ deleted: boolean }> => {
+    const response = await apiClient.post(`/admin/storage-keys/${keyId}/objects/delete`, {
+      key: objectKey,
+    });
+    return unwrap(response);
+  },
+
+  bulkDeleteStorageObjects: async (
+    keyId: string,
+    keys: string[],
+  ): Promise<{ deleted: number; failed: string[] }> => {
+    const response = await apiClient.post(`/admin/storage-keys/${keyId}/objects/bulk-delete`, {
+      keys,
+    });
+    return unwrap(response);
+  },
+};
