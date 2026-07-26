@@ -121,3 +121,26 @@ export function useRevokeInvitation() {
     },
   });
 }
+
+export function useTeraboxSettings() {
+  return useQuery({
+    queryKey: ['admin', 'terabox'],
+    queryFn: () => adminApi.teraboxSettings(),
+  });
+}
+
+export function useSaveTeraboxCookie() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (cookie: string) => adminApi.saveTeraboxCookie(cookie),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'terabox'] });
+    },
+  });
+}
+
+export function useTestTeraboxLink() {
+  return useMutation({
+    mutationFn: (input: { url?: string; cookie?: string }) => adminApi.testTeraboxLink(input),
+  });
+}

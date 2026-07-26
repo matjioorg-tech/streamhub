@@ -165,3 +165,16 @@ export interface StorageObjectsResponse {
   nextContinuationToken: string | null;
   keyCount: number;
 }
+
+export interface TeraboxSettings {
+  configured: boolean;
+  cookiePreview: string | null;
+  updatedAt: string | null;
+}
+
+export interface TeraboxTestResult {
+  ok: boolean;
+  fileName?: string | null;
+  size?: number | null;
+  error?: string;
+}

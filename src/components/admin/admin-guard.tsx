@@ -19,6 +19,7 @@ const navLinks = [
   { href: '/admin/videos', label: 'Videos' },
   { href: '/admin/uploads', label: 'Uploads' },
   { href: '/admin/storage-keys', label: 'Storage Keys' },
+  { href: '/admin/terabox', label: 'TeraBox' },
   { href: '/admin/invitations', label: 'Invitations' },
 ];
 

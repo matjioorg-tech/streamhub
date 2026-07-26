@@ -13,6 +13,8 @@ import type {
   StorageObjectsResponse,
   CreateInvitationResult,
   User,
+  TeraboxSettings,
+  TeraboxTestResult,
 } from './types';
 
 export interface VideoQueryParams {
@@ -239,6 +241,24 @@ export const adminApi = {
     const response = await apiClient.post(`/admin/storage-keys/${keyId}/objects/bulk-delete`, {
       keys,
     });
+    return unwrap(response);
+  },
+
+  teraboxSettings: async (): Promise<TeraboxSettings> => {
+    const response = await apiClient.get('/admin/terabox');
+    return unwrap(response);
+  },
+
+  saveTeraboxCookie: async (cookie: string): Promise<TeraboxSettings> => {
+    const response = await apiClient.patch('/admin/terabox', { cookie });
+    return unwrap(response);
+  },
+
+  testTeraboxLink: async (input: {
+    url?: string;
+    cookie?: string;
+  }): Promise<TeraboxTestResult> => {
+    const response = await apiClient.post('/admin/terabox/test', input);
     return unwrap(response);
   },
 };

@@ -37,6 +37,9 @@ export default function AdminDashboardPage() {
         <Link href="/admin/storage-keys" className="text-red-400 hover:underline">
           Storage keys →
         </Link>
+        <Link href="/admin/terabox" className="text-red-400 hover:underline">
+          TeraBox cookie →
+        </Link>
         <Link href="/admin/invitations" className="text-red-400 hover:underline">
           Invite admins →
         </Link>
