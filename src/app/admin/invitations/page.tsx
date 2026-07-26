@@ -7,6 +7,7 @@ import {
   useRevokeInvitation,
   useResendInvitation,
 } from '@/hooks/use-admin';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 function statusColor(status: string): string {
   switch (status) {
@@ -33,6 +34,10 @@ export default function AdminInvitationsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<{
+    id: string;
+    email: string;
+  } | null>(null);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -61,12 +66,13 @@ export default function AdminInvitationsPage() {
     }
   };
 
-  const handleRevoke = async (id: string, inviteEmail: string) => {
-    if (!confirm(`Revoke invitation for ${inviteEmail}?`)) return;
+  const runRevoke = async () => {
+    if (!revokeTarget) return;
     setError(null);
     try {
-      await revokeInvitation.mutateAsync(id);
-      setMessage(`Invitation for ${inviteEmail} revoked.`);
+      await revokeInvitation.mutateAsync(revokeTarget.id);
+      setMessage(`Invitation for ${revokeTarget.email} revoked.`);
+      setRevokeTarget(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to revoke invitation');
     }
@@ -180,7 +186,9 @@ export default function AdminInvitationsPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleRevoke(invitation.id, invitation.email)}
+                      onClick={() =>
+                        setRevokeTarget({ id: invitation.id, email: invitation.email })
+                      }
                       disabled={revokeInvitation.isPending}
                       className="rounded-lg border border-red-900 px-3 py-2 text-xs text-red-400 hover:bg-red-950 disabled:opacity-50"
                     >
@@ -192,6 +200,17 @@ export default function AdminInvitationsPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {revokeTarget && (
+        <ConfirmDialog
+          title="Revoke invitation?"
+          description={`Revoke invitation for ${revokeTarget.email}?`}
+          confirmLabel="Revoke"
+          loading={revokeInvitation.isPending}
+          onCancel={() => setRevokeTarget(null)}
+          onConfirm={() => void runRevoke()}
+        />
       )}
     </>
   );

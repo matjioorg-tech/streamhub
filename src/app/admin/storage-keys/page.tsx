@@ -11,15 +11,10 @@ import {
 } from '@/hooks/use-admin';
 import type { CreateB2StorageKeyInput, B2StorageKey } from '@/lib/api/types';
 import { StorageDataModal } from '@/components/admin/storage-data-modal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { formatBytes } from '@/lib/utils';
 
 const DEFAULT_QUOTA_GB = 9.5;
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-}
 
 const emptyForm: CreateB2StorageKeyInput = {
   name: '',
@@ -46,6 +41,10 @@ export default function AdminStorageKeysPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewingKey, setViewingKey] = useState<B2StorageKey | null>(null);
+  const [deactivateTarget, setDeactivateTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const updateField = (field: keyof CreateB2StorageKeyInput, value: string | number) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -108,11 +107,12 @@ export default function AdminStorageKeysPage() {
     }
   };
 
-  const handleDeactivate = async (id: string, name: string) => {
-    if (!confirm(`Deactivate "${name}"? Existing videos will still play.`)) return;
+  const runDeactivate = async () => {
+    if (!deactivateTarget) return;
     try {
-      await deactivate.mutateAsync(id);
-      setMessage(`"${name}" deactivated.`);
+      await deactivate.mutateAsync(deactivateTarget.id);
+      setMessage(`"${deactivateTarget.name}" deactivated.`);
+      setDeactivateTarget(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to deactivate');
     }
@@ -361,7 +361,7 @@ export default function AdminStorageKeysPage() {
                 {key.isActive && (
                   <button
                     type="button"
-                    onClick={() => handleDeactivate(key.id, key.name)}
+                    onClick={() => setDeactivateTarget({ id: key.id, name: key.name })}
                     disabled={deactivate.isPending}
                     className="rounded-lg border border-red-900 px-3 py-1.5 text-xs text-red-400 hover:bg-red-950 disabled:opacity-50"
                   >
@@ -379,6 +379,17 @@ export default function AdminStorageKeysPage() {
           storageKey={viewingKey}
           onClose={() => setViewingKey(null)}
           onUsageChanged={() => refetch()}
+        />
+      )}
+
+      {deactivateTarget && (
+        <ConfirmDialog
+          title={`Deactivate "${deactivateTarget.name}"?`}
+          description="Existing videos on this key will still play. New uploads will skip this key."
+          confirmLabel="Deactivate"
+          loading={deactivate.isPending}
+          onCancel={() => setDeactivateTarget(null)}
+          onConfirm={() => void runDeactivate()}
         />
       )}
     </>

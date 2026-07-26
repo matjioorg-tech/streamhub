@@ -1,36 +1,45 @@
 'use client';
 
+import { useState, useTransition } from 'react';
 import { useAdminVideos } from '@/hooks/use-admin';
 import { adminApi } from '@/lib/api';
-import { useMemo, useState } from 'react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+
+type DeleteRequest =
+  | { type: 'one'; id: string; title: string }
+  | { type: 'many'; ids: string[]; titles: string[] }
+  | null;
+
+function buildListPreview(items: string[]): string {
+  if (items.length <= 3) return items.map((t) => `• ${t}`).join('\n');
+  return `• ${items.slice(0, 3).join('\n• ')}\n• …and ${items.length - 3} more`;
+}
 
 export default function AdminVideosPage() {
   const { data: videos, isLoading, refetch } = useAdminVideos();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [deleteRequest, setDeleteRequest] = useState<DeleteRequest>(null);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [, startSelectionTransition] = useTransition();
 
   const videoList = videos ?? [];
+  const selectedCount = selectedIds.size;
   const allSelected =
     videoList.length > 0 && videoList.every((video) => selectedIds.has(video.id));
-  const someSelected = selectedIds.size > 0;
 
-  const selectedTitles = useMemo(
-    () => videoList.filter((v) => selectedIds.has(v.id)).map((v) => v.title),
-    [videoList, selectedIds],
-  );
+  const setSelection = (updater: (prev: Set<string>) => Set<string>) => {
+    startSelectionTransition(() => setSelectedIds(updater));
+  };
 
   const toggleAll = () => {
-    if (allSelected) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(videoList.map((video) => video.id)));
-    }
+    setSelection(() =>
+      allSelected ? new Set() : new Set(videoList.map((video) => video.id)),
+    );
   };
 
   const toggleOne = (id: string) => {
-    setSelectedIds((prev) => {
+    setSelection((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -38,79 +47,71 @@ export default function AdminVideosPage() {
     });
   };
 
-  const handlePublish = async (id: string) => {
-    await adminApi.publish(id);
-    refetch();
-  };
+  const runDelete = async () => {
+    if (!deleteRequest) return;
 
-  const handleUnpublish = async (id: string) => {
-    await adminApi.unpublish(id);
-    refetch();
-  };
-
-  const handleDelete = async (id: string, title: string) => {
-    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+    setDeleting(true);
     setError(null);
-    setDeletingId(id);
     try {
-      await adminApi.deleteVideo(id);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
+      if (deleteRequest.type === 'one') {
+        await adminApi.deleteVideo(deleteRequest.id);
+        setSelection((prev) => {
+          const next = new Set(prev);
+          next.delete(deleteRequest.id);
+          return next;
+        });
+      } else {
+        await adminApi.bulkDeleteVideos(deleteRequest.ids);
+        setSelectedIds(new Set());
+      }
+      setDeleteRequest(null);
       refetch();
     } catch {
-      setError('Failed to delete video. Make sure you are logged in as admin.');
+      setError('Failed to delete video(s). Make sure you are logged in as admin.');
     } finally {
-      setDeletingId(null);
+      setDeleting(false);
     }
   };
 
-  const handleBulkDelete = async () => {
-    const count = selectedIds.size;
-    if (count === 0) return;
-
-    const preview =
-      count <= 3
-        ? selectedTitles.map((t) => `• ${t}`).join('\n')
-        : `• ${selectedTitles.slice(0, 3).join('\n• ')}\n• …and ${count - 3} more`;
-
-    if (
-      !confirm(
-        `Delete ${count} video${count === 1 ? '' : 's'}? This cannot be undone.\n\n${preview}`,
-      )
-    ) {
-      return;
-    }
-
-    setError(null);
-    setBulkDeleting(true);
-    try {
-      await adminApi.bulkDeleteVideos([...selectedIds]);
-      setSelectedIds(new Set());
-      refetch();
-    } catch {
-      setError('Failed to delete selected videos.');
-    } finally {
-      setBulkDeleting(false);
-    }
-  };
+  const deleteDialog =
+    deleteRequest?.type === 'one' ? (
+      <ConfirmDialog
+        title="Delete video?"
+        description={`Delete "${deleteRequest.title}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        loading={deleting}
+        onCancel={() => setDeleteRequest(null)}
+        onConfirm={() => void runDelete()}
+      />
+    ) : deleteRequest?.type === 'many' ? (
+      <ConfirmDialog
+        title={`Delete ${deleteRequest.ids.length} video${deleteRequest.ids.length === 1 ? '' : 's'}?`}
+        description={`This cannot be undone.\n\n${buildListPreview(deleteRequest.titles)}`}
+        confirmLabel="Delete"
+        loading={deleting}
+        onCancel={() => setDeleteRequest(null)}
+        onConfirm={() => void runDelete()}
+      />
+    ) : null;
 
   return (
     <>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Manage Videos</h1>
-        {someSelected && (
+        {selectedCount > 0 && (
           <button
             type="button"
-            onClick={handleBulkDelete}
-            disabled={bulkDeleting}
+            onClick={() => {
+              const ids = [...selectedIds];
+              const titles = videoList
+                .filter((v) => selectedIds.has(v.id))
+                .map((v) => v.title);
+              setDeleteRequest({ type: 'many', ids, titles });
+            }}
+            disabled={deleting}
             className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
           >
-            {bulkDeleting
-              ? 'Deleting...'
-              : `Delete selected (${selectedIds.size})`}
+            Delete selected ({selectedCount})
           </button>
         )}
       </div>
@@ -169,7 +170,7 @@ export default function AdminVideosPage() {
                     {video.status !== 'published' && (
                       <button
                         type="button"
-                        onClick={() => handlePublish(video.id)}
+                        onClick={() => void adminApi.publish(video.id).then(() => refetch())}
                         className="text-green-400 hover:underline"
                       >
                         Publish
@@ -178,7 +179,7 @@ export default function AdminVideosPage() {
                     {video.status === 'published' && (
                       <button
                         type="button"
-                        onClick={() => handleUnpublish(video.id)}
+                        onClick={() => void adminApi.unpublish(video.id).then(() => refetch())}
                         className="text-yellow-400 hover:underline"
                       >
                         Unpublish
@@ -186,11 +187,13 @@ export default function AdminVideosPage() {
                     )}
                     <button
                       type="button"
-                      onClick={() => handleDelete(video.id, video.title)}
-                      disabled={deletingId === video.id || bulkDeleting}
+                      onClick={() =>
+                        setDeleteRequest({ type: 'one', id: video.id, title: video.title })
+                      }
+                      disabled={deleting}
                       className="text-red-400 hover:underline disabled:opacity-50"
                     >
-                      {deletingId === video.id ? 'Deleting...' : 'Delete'}
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -199,6 +202,8 @@ export default function AdminVideosPage() {
           </table>
         </div>
       )}
+
+      {deleteDialog}
     </>
   );
 }
