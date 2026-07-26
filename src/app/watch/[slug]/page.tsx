@@ -44,13 +44,12 @@ export default function WatchPage({
 
   return (
     <PageLayout className="!px-0 md:!px-6">
-      <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
-        {/* Edge-to-edge player on mobile */}
-        <div className="md:overflow-hidden md:rounded-xl md:shadow-2xl md:shadow-black/50">
+      <div className="mx-auto max-w-5xl space-y-3 md:space-y-6">
+        <div className="w-full md:overflow-hidden md:rounded-xl md:shadow-2xl md:shadow-black/50">
           <VideoPlayer video={video} />
         </div>
 
-        <div className="space-y-4 px-4 md:px-0">
+        <div className="space-y-4 px-4 pb-[env(safe-area-inset-bottom)] md:px-0">
           <div>
             <h1 className="text-xl font-bold leading-snug text-white sm:text-2xl lg:text-3xl">
               {video.title}
@@ -106,8 +105,8 @@ export default function WatchPage({
             </div>
           )}
 
-          <p className="text-center text-xs text-zinc-600 md:text-left">
-            Double-tap left/right to skip 10s · Tap center for controls · Gear icon for quality
+          <p className="hidden text-center text-xs text-zinc-600 sm:block md:text-left">
+            Double-tap left/right to skip 10s · Tap center to play · Gear icon for quality
           </p>
         </div>
       </div>

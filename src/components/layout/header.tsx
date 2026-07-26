@@ -19,10 +19,15 @@ export function Header() {
     <header
       className={cn(
         'sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur',
-        isWatchPage && 'md:block',
+        isWatchPage && 'border-b-zinc-800/80',
       )}
     >
-      <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4 sm:gap-6">
+      <div
+        className={cn(
+          'mx-auto flex max-w-7xl items-center gap-4 px-4 sm:gap-6',
+          isWatchPage ? 'h-12 md:h-14' : 'h-14',
+        )}
+      >
         <Link href="/" className="shrink-0 text-lg font-bold tracking-tight text-red-500">
           StreamHub
         </Link>

@@ -21,8 +21,8 @@ export function PageLayout({
       <Header />
       <main
         className={cn(
-          'mx-auto w-full max-w-7xl flex-1 px-4 py-5 md:px-6 md:py-6',
-          isWatchPage ? 'pb-6' : 'pb-24 md:pb-8',
+          'mx-auto w-full max-w-7xl flex-1',
+          isWatchPage ? 'px-0 py-0 pb-4 md:px-6 md:py-6' : 'px-4 py-5 pb-24 md:px-6 md:py-6 md:pb-8',
           className,
         )}
       >
