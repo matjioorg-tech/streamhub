@@ -73,25 +73,37 @@ input[type='range']::-webkit-slider-runnable-track {
   background: #000;
 }
 
+.group\/player:fullscreen video,
+.group\/player:-webkit-full-screen video,
+.player-pseudo-fullscreen video {
+  object-fit: contain !important;
+  object-position: center;
+}
+
 /* iOS / Safari fallback when native fullscreen API is unavailable */
 .player-pseudo-fullscreen {
   position: fixed !important;
   inset: 0 !important;
   z-index: 9999 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
   max-height: none !important;
   min-height: 0 !important;
   aspect-ratio: auto !important;
   border-radius: 0 !important;
+  margin: 0 !important;
 }
 
 body.video-pseudo-fullscreen {
   overflow: hidden !important;
-  position: fixed;
-  width: 100%;
-  height: 100%;
+}
+
+@supports (height: 100dvh) {
+  .player-pseudo-fullscreen {
+    width: 100dvw !important;
+    height: 100dvh !important;
+  }
 }
 
 body.video-fullscreen header,
@@ -99,24 +111,4 @@ body.video-fullscreen nav[class*='fixed'][class*='bottom'],
 body.video-pseudo-fullscreen header,
 body.video-pseudo-fullscreen nav[class*='fixed'][class*='bottom'] {
   display: none !important;
-}
-
-/* Landscape layout when orientation lock is unavailable (iOS Safari) */
-.group\/player:fullscreen.player-landscape-fallback,
-.group\/player:-webkit-full-screen.player-landscape-fallback,
-.player-pseudo-fullscreen.player-landscape-fallback {
-  position: fixed !important;
-  top: 50% !important;
-  left: 50% !important;
-  right: auto !important;
-  bottom: auto !important;
-  inset: auto !important;
-  width: 100dvh !important;
-  height: 100dvw !important;
-  max-width: none !important;
-  max-height: none !important;
-  min-height: 0 !important;
-  margin: 0 !important;
-  transform: translate(-50%, -50%) rotate(90deg) !important;
-  transform-origin: center center !important;
 }

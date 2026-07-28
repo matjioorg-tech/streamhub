@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Play,
   Pause,
@@ -26,8 +27,9 @@ const SPEED_DEFAULT = 1;
 const SPEED_HOLD_RATE = 2;
 const SPEED_STEP = 0.5;
 const SPEED_SWIPE_PX = 48;
-const SPEED_HOLD_MS = 200;
+const SPEED_HOLD_MS = 180;
 const TAP_MOVE_THRESHOLD = 10;
+const HOLD_CANCEL_PX = 22;
 const TAP_SUPPRESS_MS = 350;
 const PROGRESS_PAD = 12;
 const SWIPE_SEEK_PX = 40;
@@ -39,35 +41,18 @@ interface LocalPointer {
   height: number;
 }
 
-/** Map screen coords to player-local coords (handles CSS 90° landscape rotation). */
+/** Map screen coords to player-local coords. */
 function getLocalPointerCoords(
   clientX: number,
   clientY: number,
   container: HTMLElement,
-  isRotated: boolean,
 ): LocalPointer {
   const rect = container.getBoundingClientRect();
-  if (!isRotated) {
-    return {
-      localX: clientX - rect.left,
-      localY: clientY - rect.top,
-      width: rect.width,
-      height: rect.height,
-    };
-  }
-
-  const cx = rect.left + rect.width / 2;
-  const cy = rect.top + rect.height / 2;
-  const sdx = clientX - cx;
-  const sdy = clientY - cy;
-  const width = rect.height;
-  const height = rect.width;
-
   return {
-    localX: width / 2 + sdy,
-    localY: height / 2 - sdx,
-    width,
-    height,
+    localX: clientX - rect.left,
+    localY: clientY - rect.top,
+    width: rect.width,
+    height: rect.height,
   };
 }
 
@@ -182,7 +167,9 @@ export function VideoPlayer({
     pointerId: -1,
     startX: 0,
     startY: 0,
+    speedSwipeOriginX: 0,
     startRate: SPEED_DEFAULT,
+    lastStep: 0,
     active: false,
     holdTimer: null as ReturnType<typeof setTimeout> | null,
   });
@@ -190,7 +177,11 @@ export function VideoPlayer({
   const suppressTapUntilRef = useRef(0);
   const pointerSessionRef = useRef({ moved: false, speedUsed: false });
   const pointerStartRef = useRef({ x: 0, y: 0, localX: 0, localY: 0, time: 0 });
-  const forceLandscapeRef = useRef(false);
+  const lastPointerRef = useRef({ clientX: 0, clientY: 0, localX: 0, localY: 0 });
+  const lastAppliedRateRef = useRef(SPEED_DEFAULT);
+  const overlayRafRef = useRef<number | null>(null);
+  const isFullscreenRef = useRef(false);
+  const documentGestureCleanupRef = useRef<(() => void) | null>(null);
 
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -210,9 +201,9 @@ export function VideoPlayer({
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(SPEED_DEFAULT);
   const [showSpeedOverlay, setShowSpeedOverlay] = useState(false);
-  const [forceLandscape, setForceLandscape] = useState(false);
   const [gestureActive, setGestureActive] = useState(false);
   const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
+  const [showRotateHint, setShowRotateHint] = useState(false);
   const orientationLockedRef = useRef(false);
 
   const qualityOptions: VideoQualityOption[] = useMemo(() => {
@@ -279,40 +270,73 @@ export function VideoPlayer({
   const applyPlaybackRate = useCallback((rate: number) => {
     const el = videoRef.current;
     const snapped = snapSpeed(rate);
+    if (el && el.playbackRate !== snapped) {
+      el.playbackRate = snapped;
+    }
+    lastAppliedRateRef.current = snapped;
+    if (overlayRafRef.current !== null) return;
+    overlayRafRef.current = requestAnimationFrame(() => {
+      overlayRafRef.current = null;
+      setPlaybackRate(lastAppliedRateRef.current);
+    });
+  }, []);
+
+  const flushPlaybackRate = useCallback((rate: number) => {
+    const el = videoRef.current;
+    const snapped = snapSpeed(rate);
     if (el) el.playbackRate = snapped;
+    lastAppliedRateRef.current = snapped;
+    if (overlayRafRef.current !== null) {
+      cancelAnimationFrame(overlayRafRef.current);
+      overlayRafRef.current = null;
+    }
     setPlaybackRate(snapped);
   }, []);
 
+  const getSpeedSwipeThreshold = useCallback(() => {
+    const width = containerRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+    return Math.max(28, Math.min(50, width * 0.065));
+  }, []);
+
   const activateSpeedGesture = useCallback(
-    (localX: number) => {
+    (clientX: number) => {
       const g = speedGestureRef.current;
       const session = pointerSessionRef.current;
       g.active = true;
-      g.startX = localX;
+      g.speedSwipeOriginX = clientX;
       g.startRate = SPEED_HOLD_RATE;
+      g.lastStep = 0;
       session.speedUsed = true;
       isSpeedGesturingRef.current = true;
-      applyPlaybackRate(SPEED_HOLD_RATE);
+      flushPlaybackRate(SPEED_HOLD_RATE);
       setShowSpeedOverlay(true);
       clearHideTimer();
-      setShowControls(true);
+      if (!isFullscreenRef.current) {
+        setShowControls(true);
+      }
       const el = videoRef.current;
       if (el?.paused) {
         void el.play().catch(() => undefined);
       }
     },
-    [clearHideTimer, applyPlaybackRate],
+    [clearHideTimer, flushPlaybackRate],
   );
 
   const updateSpeedFromPointer = useCallback(
-    (localX: number) => {
+    (clientX: number) => {
       const g = speedGestureRef.current;
       if (!g.active) return;
-      const deltaX = localX - g.startX;
-      const steps = Math.round(deltaX / SPEED_SWIPE_PX);
+      const threshold = getSpeedSwipeThreshold();
+      const deltaX = clientX - g.speedSwipeOriginX;
+      const steps =
+        deltaX >= 0
+          ? Math.floor(deltaX / threshold)
+          : Math.ceil(deltaX / threshold);
+      if (steps === g.lastStep) return;
+      g.lastStep = steps;
       applyPlaybackRate(g.startRate + steps * SPEED_STEP);
     },
-    [applyPlaybackRate],
+    [applyPlaybackRate, getSpeedSwipeThreshold],
   );
 
   const getPointerLocal = useCallback((clientX: number, clientY: number): LocalPointer => {
@@ -320,7 +344,7 @@ export function VideoPlayer({
     if (!container) {
       return { localX: clientX, localY: clientY, width: 1, height: 1 };
     }
-    return getLocalPointerCoords(clientX, clientY, container, forceLandscapeRef.current);
+    return getLocalPointerCoords(clientX, clientY, container);
   }, []);
 
   const endSpeedGesture = useCallback(() => {
@@ -332,8 +356,9 @@ export function VideoPlayer({
     const wasActive = g.active;
     g.active = false;
     g.pointerId = -1;
+    g.lastStep = 0;
     if (wasActive) {
-      applyPlaybackRate(SPEED_DEFAULT);
+      flushPlaybackRate(SPEED_DEFAULT);
       setShowSpeedOverlay(false);
       suppressTapUntilRef.current = Date.now() + TAP_SUPPRESS_MS;
       if (playing) scheduleHideControls();
@@ -341,14 +366,40 @@ export function VideoPlayer({
     setTimeout(() => {
       isSpeedGesturingRef.current = false;
     }, TAP_SUPPRESS_MS);
-  }, [applyPlaybackRate, playing, scheduleHideControls]);
+  }, [flushPlaybackRate, playing, scheduleHideControls]);
+
+  const shouldIgnoreTap = useCallback(() => {
+    if (isSpeedGesturingRef.current) return true;
+    if (Date.now() < suppressTapUntilRef.current) return true;
+    if (pointerSessionRef.current.moved) return true;
+    if (pointerSessionRef.current.speedUsed) return true;
+    return false;
+  }, []);
+
+  const handleTapRef = useRef<(clientX: number, clientY: number) => void>(() => {});
+  const shouldIgnoreTapRef = useRef<() => boolean>(() => false);
+
+  const cleanupDocumentGesture = useCallback(() => {
+    documentGestureCleanupRef.current?.();
+    documentGestureCleanupRef.current = null;
+  }, []);
 
   const handleGesturePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (isScrubbingRef.current) return;
 
+      cleanupDocumentGesture();
+
       const local = getPointerLocal(e.clientX, e.clientY);
+      const pointerId = e.pointerId;
+
+      lastPointerRef.current = {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        localX: local.localX,
+        localY: local.localY,
+      };
 
       setGestureActive(true);
       pointerStartRef.current = {
@@ -361,104 +412,133 @@ export function VideoPlayer({
       pointerSessionRef.current = { moved: false, speedUsed: false };
 
       const g = speedGestureRef.current;
-      g.pointerId = e.pointerId;
+      g.pointerId = pointerId;
       g.startX = local.localX;
       g.startY = local.localY;
       g.startRate = SPEED_HOLD_RATE;
+      g.lastStep = 0;
       g.active = false;
 
       try {
-        e.currentTarget.setPointerCapture(e.pointerId);
+        e.currentTarget.setPointerCapture(pointerId);
       } catch {
         // ignore
       }
 
+      const processMove = (clientX: number, clientY: number, preventDefault?: () => void) => {
+        const gesture = speedGestureRef.current;
+        if (gesture.pointerId !== pointerId) return;
+
+        const point = getPointerLocal(clientX, clientY);
+        lastPointerRef.current = {
+          clientX,
+          clientY,
+          localX: point.localX,
+          localY: point.localY,
+        };
+
+        const deltaX = point.localX - pointerStartRef.current.localX;
+        const deltaY = point.localY - pointerStartRef.current.localY;
+
+        if (Math.abs(deltaX) > TAP_MOVE_THRESHOLD || Math.abs(deltaY) > TAP_MOVE_THRESHOLD) {
+          pointerSessionRef.current.moved = true;
+        }
+
+        if (
+          !gesture.active &&
+          Math.abs(deltaY) > HOLD_CANCEL_PX &&
+          Math.abs(deltaY) > Math.abs(deltaX) * 1.5
+        ) {
+          if (gesture.holdTimer) {
+            clearTimeout(gesture.holdTimer);
+            gesture.holdTimer = null;
+          }
+          return;
+        }
+
+        if (!gesture.active) return;
+
+        preventDefault?.();
+        updateSpeedFromPointer(clientX);
+      };
+
+      const processEnd = (clientX: number, clientY: number) => {
+        if (speedGestureRef.current.pointerId !== pointerId) return;
+
+        cleanupDocumentGesture();
+        setGestureActive(false);
+
+        const gesture = speedGestureRef.current;
+        const wasSpeedActive = gesture.active;
+        endSpeedGesture();
+
+        try {
+          if (e.currentTarget.hasPointerCapture(pointerId)) {
+            e.currentTarget.releasePointerCapture(pointerId);
+          }
+        } catch {
+          // ignore
+        }
+
+        if (wasSpeedActive || pointerSessionRef.current.speedUsed) return;
+
+        const point = getPointerLocal(clientX, clientY);
+        const deltaX = point.localX - pointerStartRef.current.localX;
+        const deltaY = point.localY - pointerStartRef.current.localY;
+
+        if (
+          Math.abs(deltaX) > SWIPE_SEEK_PX &&
+          Math.abs(deltaX) > Math.abs(deltaY) * 1.2
+        ) {
+          seekRelative(deltaX > 0 ? SEEK_SECONDS : -SEEK_SECONDS);
+          showSeekFeedback(deltaX > 0 ? 'forward' : 'back');
+          suppressTapUntilRef.current = Date.now() + TAP_SUPPRESS_MS;
+          pointerSessionRef.current.moved = true;
+          return;
+        }
+
+        if (shouldIgnoreTapRef.current()) return;
+        handleTapRef.current(clientX, clientY);
+      };
+
       if (g.holdTimer) clearTimeout(g.holdTimer);
       g.holdTimer = setTimeout(() => {
-        if (g.pointerId === e.pointerId && !isScrubbingRef.current) {
-          activateSpeedGesture(g.startX);
+        if (g.pointerId === pointerId && !isScrubbingRef.current) {
+          const { clientX } = lastPointerRef.current;
+          activateSpeedGesture(clientX);
+          updateSpeedFromPointer(clientX);
         }
       }, SPEED_HOLD_MS);
+
+      const onDocMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        processMove(ev.clientX, ev.clientY, () => ev.preventDefault());
+      };
+
+      const onDocEnd = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        processEnd(ev.clientX, ev.clientY);
+      };
+
+      document.addEventListener('pointermove', onDocMove, { passive: false });
+      document.addEventListener('pointerup', onDocEnd);
+      document.addEventListener('pointercancel', onDocEnd);
+      documentGestureCleanupRef.current = () => {
+        document.removeEventListener('pointermove', onDocMove);
+        document.removeEventListener('pointerup', onDocEnd);
+        document.removeEventListener('pointercancel', onDocEnd);
+      };
     },
-    [activateSpeedGesture, getPointerLocal],
+    [
+      activateSpeedGesture,
+      cleanupDocumentGesture,
+      endSpeedGesture,
+      getPointerLocal,
+      seekRelative,
+      showSeekFeedback,
+      updateSpeedFromPointer,
+    ],
   );
-
-  const handleGesturePointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      const g = speedGestureRef.current;
-      if (g.pointerId !== e.pointerId) return;
-
-      const local = getPointerLocal(e.clientX, e.clientY);
-      const deltaX = local.localX - pointerStartRef.current.localX;
-      const deltaY = local.localY - pointerStartRef.current.localY;
-
-      if (Math.abs(deltaX) > TAP_MOVE_THRESHOLD || Math.abs(deltaY) > TAP_MOVE_THRESHOLD) {
-        pointerSessionRef.current.moved = true;
-      }
-
-      if (!g.active && Math.abs(deltaY) > TAP_MOVE_THRESHOLD && Math.abs(deltaY) > Math.abs(deltaX)) {
-        if (g.holdTimer) {
-          clearTimeout(g.holdTimer);
-          g.holdTimer = null;
-        }
-        return;
-      }
-
-      if (!g.active) return;
-
-      e.preventDefault();
-      updateSpeedFromPointer(local.localX);
-    },
-    [getPointerLocal, updateSpeedFromPointer],
-  );
-
-  const handleGesturePointerEnd = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      setGestureActive(false);
-
-      const g = speedGestureRef.current;
-      if (g.pointerId !== e.pointerId) return;
-
-      const wasSpeedActive = g.active;
-      if (g.holdTimer) {
-        clearTimeout(g.holdTimer);
-        g.holdTimer = null;
-      }
-
-      endSpeedGesture();
-
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch {
-        // Pointer may not be captured
-      }
-
-      if (wasSpeedActive || pointerSessionRef.current.speedUsed) return;
-
-      const local = getPointerLocal(e.clientX, e.clientY);
-      const deltaX = local.localX - pointerStartRef.current.localX;
-      const deltaY = local.localY - pointerStartRef.current.localY;
-
-      if (
-        Math.abs(deltaX) > SWIPE_SEEK_PX &&
-        Math.abs(deltaX) > Math.abs(deltaY) * 1.2
-      ) {
-        seekRelative(deltaX > 0 ? SEEK_SECONDS : -SEEK_SECONDS);
-        showSeekFeedback(deltaX > 0 ? 'forward' : 'back');
-        suppressTapUntilRef.current = Date.now() + TAP_SUPPRESS_MS;
-        pointerSessionRef.current.moved = true;
-      }
-    },
-    [endSpeedGesture, getPointerLocal, seekRelative, showSeekFeedback],
-  );
-
-  const shouldIgnoreTap = useCallback(() => {
-    if (isSpeedGesturingRef.current) return true;
-    if (Date.now() < suppressTapUntilRef.current) return true;
-    if (pointerSessionRef.current.moved) return true;
-    if (pointerSessionRef.current.speedUsed) return true;
-    return false;
-  }, []);
 
   const attemptPlay = useCallback(async () => {
     const el = videoRef.current;
@@ -513,8 +593,9 @@ export function VideoPlayer({
   const exitFullscreenMode = useCallback(async () => {
     const el = videoRef.current as WebKitVideoElement | null;
 
+    cleanupDocumentGesture();
+    setGestureActive(false);
     setPseudoFullscreen(false);
-    setForceLandscape(false);
     document.body.classList.remove('video-fullscreen', 'video-pseudo-fullscreen');
 
     if (orientationLockedRef.current) {
@@ -537,24 +618,18 @@ export function VideoPlayer({
     }
 
     setIsFullscreen(false);
-  }, []);
+  }, [cleanupDocumentGesture]);
 
   const enterPseudoFullscreen = useCallback(() => {
-    const portrait = isPortrait();
-    const mobile = isMobileDevice();
-
     setPseudoFullscreen(true);
     setIsFullscreen(true);
     document.body.classList.add('video-fullscreen', 'video-pseudo-fullscreen');
 
-    if (mobile && portrait) {
-      setForceLandscape(true);
+    if (isMobileDevice()) {
+      void lockLandscape().then((locked) => {
+        orientationLockedRef.current = locked;
+      });
     }
-
-    void lockLandscape().then((locked) => {
-      orientationLockedRef.current = locked;
-      if (locked) setForceLandscape(false);
-    });
   }, []);
 
   /** iOS Safari requires a synchronous call from click — no await before webkitEnterFullscreen */
@@ -576,16 +651,7 @@ export function VideoPlayer({
   }, []);
 
   const enterFullscreenWithLandscape = useCallback(() => {
-    const portrait = isPortrait();
-    const mobile = isMobileDevice();
-
-    if (mobile && portrait) {
-      enterPseudoFullscreen();
-      return;
-    }
-
     if (isIosDevice()) {
-      if (enterIosNativeFullscreen()) return;
       enterPseudoFullscreen();
       return;
     }
@@ -600,12 +666,9 @@ export function VideoPlayer({
         setIsFullscreen(true);
         document.body.classList.add('video-fullscreen');
 
-        if (mobile) {
+        if (isMobileDevice()) {
           const locked = await lockLandscape();
           orientationLockedRef.current = locked;
-          if (!locked && isPortrait()) {
-            setForceLandscape(true);
-          }
         }
       } catch {
         if (el.webkitEnterFullscreen && enterIosNativeFullscreen()) return;
@@ -710,6 +773,24 @@ export function VideoPlayer({
     ],
   );
 
+  useEffect(() => {
+    handleTapRef.current = handleTap;
+    shouldIgnoreTapRef.current = shouldIgnoreTap;
+  }, [handleTap, shouldIgnoreTap]);
+
+  useEffect(() => {
+    isFullscreenRef.current = isFullscreen || pseudoFullscreen;
+  }, [isFullscreen, pseudoFullscreen]);
+
+  useEffect(() => {
+    return () => {
+      cleanupDocumentGesture();
+      if (overlayRafRef.current !== null) {
+        cancelAnimationFrame(overlayRafRef.current);
+      }
+    };
+  }, [cleanupDocumentGesture]);
+
   const updateProgressFromPointer = useCallback(
     (clientX: number) => {
       const el = videoRef.current;
@@ -726,8 +807,32 @@ export function VideoPlayer({
   );
 
   useEffect(() => {
-    forceLandscapeRef.current = forceLandscape;
-  }, [forceLandscape]);
+    if (!pseudoFullscreen) {
+      setShowRotateHint(false);
+      return;
+    }
+    if (isPortrait()) {
+      setShowRotateHint(true);
+      const timer = setTimeout(() => setShowRotateHint(false), 4000);
+      return () => clearTimeout(timer);
+    }
+    setShowRotateHint(false);
+  }, [pseudoFullscreen]);
+
+  useEffect(() => {
+    if (!pseudoFullscreen) return;
+
+    const onViewportChange = () => {
+      if (!isPortrait()) setShowRotateHint(false);
+    };
+
+    window.addEventListener('orientationchange', onViewportChange);
+    window.addEventListener('resize', onViewportChange);
+    return () => {
+      window.removeEventListener('orientationchange', onViewportChange);
+      window.removeEventListener('resize', onViewportChange);
+    };
+  }, [pseudoFullscreen]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -757,14 +862,12 @@ export function VideoPlayer({
       const isFs = !!document.fullscreenElement;
       setIsFullscreen(isFs || pseudoFullscreen);
       document.body.classList.toggle('video-fullscreen', isFs || pseudoFullscreen);
-      if (isFs && isMobileDevice() && isPortrait()) {
+      if (isFs && isMobileDevice()) {
         void lockLandscape().then((locked) => {
           orientationLockedRef.current = locked;
-          if (!locked) setForceLandscape(true);
         });
       }
       if (!isFs && !pseudoFullscreen) {
-        setForceLandscape(false);
         if (orientationLockedRef.current) {
           void unlockLandscape();
           orientationLockedRef.current = false;
@@ -772,17 +875,19 @@ export function VideoPlayer({
       }
     };
 
-    const onOrientationChange = () => {
-      const inFullscreen = pseudoFullscreen || !!document.fullscreenElement;
-      if (window.matchMedia('(orientation: landscape)').matches) {
-        setForceLandscape(false);
-      } else if (inFullscreen && isMobileDevice()) {
-        setForceLandscape(true);
+    const onViewportChange = () => {
+      // Trigger layout recalc after physical rotation (iOS Safari)
+      if (pseudoFullscreen && containerRef.current) {
+        containerRef.current.style.width = '100%';
       }
     };
 
     document.addEventListener('fullscreenchange', onFullscreenChange);
-    window.addEventListener('orientationchange', onOrientationChange);
+    window.addEventListener('orientationchange', onViewportChange);
+    window.addEventListener('resize', onViewportChange);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', onViewportChange);
+    }
 
     const el = videoRef.current as WebKitVideoElement | null;
     const onWebkitBegin = () => {
@@ -792,7 +897,6 @@ export function VideoPlayer({
     const onWebkitEnd = () => {
       setIsFullscreen(pseudoFullscreen);
       if (!pseudoFullscreen) {
-        setForceLandscape(false);
         document.body.classList.remove('video-fullscreen');
       }
     };
@@ -801,7 +905,11 @@ export function VideoPlayer({
 
     return () => {
       document.removeEventListener('fullscreenchange', onFullscreenChange);
-      window.removeEventListener('orientationchange', onOrientationChange);
+      window.removeEventListener('orientationchange', onViewportChange);
+      window.removeEventListener('resize', onViewportChange);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', onViewportChange);
+      }
       el?.removeEventListener('webkitbeginfullscreen', onWebkitBegin);
       el?.removeEventListener('webkitendfullscreen', onWebkitEnd);
       document.body.classList.remove('video-fullscreen', 'video-pseudo-fullscreen');
@@ -886,9 +994,9 @@ export function VideoPlayer({
     setPlaybackError(null);
     setIsBuffering(false);
     setIsStarting(false);
-    applyPlaybackRate(SPEED_DEFAULT);
+    flushPlaybackRate(SPEED_DEFAULT);
     setShowSpeedOverlay(false);
-  }, [activeSourceUrl, applyPlaybackRate]);
+  }, [activeSourceUrl, flushPlaybackRate]);
 
   // Clear stuck loading state if playback never starts.
   useEffect(() => {
@@ -921,16 +1029,15 @@ export function VideoPlayer({
   const buffered = duration > 0 ? (bufferedEnd / duration) * 100 : 0;
   const controlsVisible = showControls || !playing;
 
-  return (
+  const playerMarkup = (
     <div
       ref={containerRef}
       className={cn(
-        'group/player relative isolate grid w-full overflow-hidden bg-black select-none',
-        'h-[max(220px,56.25vw)] sm:aspect-video sm:h-auto sm:min-h-0',
+        'group/player relative w-full overflow-hidden bg-black select-none',
+        'aspect-video',
         'rounded-none sm:rounded-xl',
         (isFullscreen || pseudoFullscreen) && 'aspect-auto h-full max-h-none rounded-none',
         pseudoFullscreen && 'player-pseudo-fullscreen',
-        forceLandscape && 'player-landscape-fallback',
         gestureActive && 'touch-none',
       )}
     >
@@ -938,7 +1045,10 @@ export function VideoPlayer({
         ref={videoRef}
         key={activeSourceUrl}
         src={activeSourceUrl}
-        className="pointer-events-none col-start-1 row-start-1 h-full min-h-0 w-full object-cover"
+        className={cn(
+          'pointer-events-none absolute inset-0 h-full w-full',
+          isFullscreen || pseudoFullscreen ? 'object-contain' : 'object-cover sm:object-contain',
+        )}
         playsInline
         preload="auto"
         poster={video.posterUrl ?? video.thumbnailUrl ?? undefined}
@@ -991,21 +1101,17 @@ export function VideoPlayer({
         }}
       />
 
-      {/* Full-area gesture capture — sits above video, below controls */}
+      {/* Full-area gesture capture */}
       <div
-        className="col-start-1 row-start-1 z-10 min-h-0 w-full touch-manipulation self-stretch"
+        className={cn(
+          'absolute inset-0 z-10',
+          isFullscreen || pseudoFullscreen ? 'touch-none' : 'touch-manipulation',
+        )}
         onPointerDown={handleGesturePointerDown}
-        onPointerMove={handleGesturePointerMove}
-        onPointerUp={(e) => {
-          if (isScrubbingRef.current) return;
-          if (e.pointerType === 'mouse' && e.button !== 0) return;
-          handleGesturePointerEnd(e);
-          if (shouldIgnoreTap()) return;
-          handleTap(e.clientX, e.clientY);
-        }}
-        onPointerCancel={(e) => {
-          handleGesturePointerEnd(e);
+        onPointerCancel={() => {
+          cleanupDocumentGesture();
           setGestureActive(false);
+          endSpeedGesture();
         }}
         onDoubleClick={(e) => {
           if (isMobileDevice()) return;
@@ -1024,13 +1130,13 @@ export function VideoPlayer({
       />
 
       {(isStarting || isBuffering) && !playbackError && (
-        <div className="pointer-events-none col-start-1 row-start-1 flex min-h-0 w-full items-center justify-center self-stretch bg-black/40">
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/40">
           <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/20 border-t-white" />
         </div>
       )}
 
       {playbackError && (
-        <div className="col-start-1 row-start-1 flex min-h-0 w-full flex-col items-center justify-center gap-3 self-stretch bg-black/85 px-6 text-center">
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/85 px-6 text-center">
           <AlertCircle className="h-8 w-8 text-red-400" />
           <p className="text-sm text-zinc-200">{playbackError}</p>
           <button
@@ -1050,7 +1156,7 @@ export function VideoPlayer({
       {/* Top gradient + badges when controls visible */}
       <div
         className={cn(
-          'pointer-events-none col-start-1 row-start-1 w-full self-start bg-gradient-to-b from-black/70 to-transparent px-3 pb-6 pt-3 transition-opacity duration-200 sm:px-4',
+          'pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent px-3 pb-6 pt-3 transition-opacity duration-200 sm:px-4',
           controlsVisible ? 'opacity-100' : 'opacity-0',
         )}
       >
@@ -1066,8 +1172,8 @@ export function VideoPlayer({
       {seekHint && (
         <div
           className={cn(
-            'pointer-events-none col-start-1 row-start-1 self-center rounded-md bg-black/55 px-2.5 py-1.5 text-xs font-semibold text-white',
-            seekHint === 'back' ? 'justify-self-start ml-3' : 'justify-self-end mr-3',
+            'pointer-events-none absolute top-1/2 z-20 -translate-y-1/2 rounded-md bg-black/55 px-2.5 py-1.5 text-xs font-semibold text-white',
+            seekHint === 'back' ? 'left-3' : 'right-3',
           )}
         >
           {seekHint === 'back' ? `−${SEEK_SECONDS}s` : `+${SEEK_SECONDS}s`}
@@ -1075,9 +1181,17 @@ export function VideoPlayer({
       )}
 
       {showSpeedOverlay && (
-        <div className="pointer-events-none col-start-1 row-start-1 self-start justify-self-center pt-12">
+        <div className="pointer-events-none absolute inset-x-0 top-10 z-30 flex justify-center">
           <p className="rounded-md bg-black/55 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white">
             {formatPlaybackRate(playbackRate)}
+          </p>
+        </div>
+      )}
+
+      {showRotateHint && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-black/30">
+          <p className="rounded-lg bg-black/75 px-4 py-2.5 text-center text-sm text-white">
+            Rotate your device for the best view
           </p>
         </div>
       )}
@@ -1090,25 +1204,24 @@ export function VideoPlayer({
             e.stopPropagation();
             togglePlay();
           }}
-          className="col-start-1 row-start-1 z-[15] flex h-16 w-16 items-center justify-center self-center justify-self-center rounded-full bg-red-600 text-white shadow-xl shadow-black/50 active:scale-95 sm:h-20 sm:w-20"
+          className="absolute left-1/2 top-1/2 z-30 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-red-600 text-white shadow-xl shadow-black/50 active:scale-95 sm:h-20 sm:w-20"
           aria-label="Play"
         >
           <Play className="ml-1 h-8 w-8 fill-current sm:h-10 sm:w-10" />
         </button>
       )}
 
-      {/* Bottom chrome — grid self-end pins to video bottom */}
+      {/* Bottom chrome — progress bar pinned to bottom edge */}
       <div
         className={cn(
-          'col-start-1 row-start-1 z-20 flex w-full flex-col justify-end self-end transition-opacity duration-200',
+          'absolute inset-x-0 bottom-0 z-20 transition-opacity duration-200',
           controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
         onPointerDown={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Control buttons */}
-        <div className="bg-gradient-to-t from-black/90 via-black/40 to-transparent px-2 pt-3 sm:px-3 sm:pt-4">
+        <div className="bg-gradient-to-t from-black/90 via-black/50 to-transparent px-2 pt-4 pb-0 sm:px-3 sm:pt-5">
           <div className="flex items-center gap-0.5 sm:gap-1">
             <button
               type="button"
@@ -1252,10 +1365,15 @@ export function VideoPlayer({
           </div>
         </div>
 
-        {/* Progress bar — last child, flush with bottom edge */}
+        {/* Progress bar — flush with bottom edge of player */}
         <div
           data-progress
-          className="relative w-full cursor-pointer touch-none px-3 pb-[env(safe-area-inset-bottom)] sm:px-4"
+          className={cn(
+            'relative w-full cursor-pointer touch-none',
+            isFullscreen || pseudoFullscreen
+              ? 'h-5 pb-[env(safe-area-inset-bottom)]'
+              : 'h-3.5',
+          )}
           onPointerDown={(e) => {
             isScrubbingRef.current = true;
             setGestureActive(true);
@@ -1274,27 +1392,44 @@ export function VideoPlayer({
             if (playing) scheduleHideControls();
           }}
         >
-          <div className="relative h-3">
-            <div className="absolute inset-x-0 bottom-0 h-[3px] overflow-hidden rounded-full bg-white/20">
-              <div
-                className="absolute inset-y-0 left-0 bg-white/25"
-                style={{ width: `${buffered}%` }}
-              />
-              <div
-                className="absolute inset-y-0 left-0 bg-red-500"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
+          <div
+            className={cn(
+              'absolute inset-x-3 bottom-0 overflow-hidden rounded-full bg-white/20 sm:inset-x-4',
+              isFullscreen || pseudoFullscreen ? 'h-[3px]' : 'h-[2px]',
+            )}
+          >
             <div
-              className={cn(
-                'absolute bottom-[-4px] h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-red-500 shadow transition-opacity',
-                controlsVisible ? 'opacity-100' : 'opacity-0',
-              )}
-              style={{ left: `${progress}%` }}
+              className="absolute inset-y-0 left-0 bg-white/25"
+              style={{ width: `${buffered}%` }}
+            />
+            <div
+              className="absolute inset-y-0 left-0 bg-red-500"
+              style={{ width: `${progress}%` }}
             />
           </div>
+          <div
+            className={cn(
+              'absolute bottom-0 h-2.5 w-2.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-red-500 shadow transition-opacity',
+              controlsVisible ? 'opacity-100' : 'opacity-0',
+            )}
+            style={{ left: `${progress}%` }}
+          />
         </div>
       </div>
     </div>
   );
+
+  if (pseudoFullscreen && typeof document !== 'undefined') {
+    return (
+      <>
+        <div
+          className="h-[56.25vw] w-full bg-black sm:aspect-video sm:h-auto"
+          aria-hidden
+        />
+        {createPortal(playerMarkup, document.body)}
+      </>
+    );
+  }
+
+  return playerMarkup;
 }
