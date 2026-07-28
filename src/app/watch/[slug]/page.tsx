@@ -62,7 +62,7 @@ export default function WatchPage({
   return (
     <PageLayout className="!px-0 md:!px-6">
       <div className="mx-auto max-w-5xl space-y-3 md:space-y-6">
-        <div className="relative left-1/2 w-screen max-w-none -translate-x-1/2 md:left-0 md:w-full md:translate-x-0 md:overflow-hidden md:rounded-xl md:shadow-2xl md:shadow-black/50">
+        <div className="relative ml-[calc(50%-50vw)] w-screen max-w-none md:ml-0 md:w-full md:overflow-hidden md:rounded-xl md:shadow-2xl md:shadow-black/50">
           <VideoPlayer video={displayVideo} />
         </div>
 
