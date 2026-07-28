@@ -25,7 +25,6 @@ const SPEED_MAX = 2;
 const SPEED_DEFAULT = 1;
 const SPEED_PX_PER_STEP = 40;
 const SPEED_HOLD_MS = 280;
-const SPEED_ACTIVATION_PX = 14;
 
 function formatPlaybackRate(rate: number): string {
   if (Math.abs(rate - 1) < 0.01) return '1x';
@@ -50,6 +49,34 @@ function isIosDevice(): boolean {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
+function isMobileDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+async function lockLandscape(): Promise<boolean> {
+  try {
+    const orientation = screen.orientation as ScreenOrientation & {
+      lock?: (orientation: string) => Promise<void>;
+    };
+    if (orientation?.lock) {
+      await orientation.lock('landscape');
+      return true;
+    }
+  } catch {
+    // Not supported or not allowed outside fullscreen
+  }
+  return false;
+}
+
+async function unlockLandscape(): Promise<void> {
+  try {
+    screen.orientation?.unlock?.();
+  } catch {
+    // ignore
+  }
+}
+
 export function VideoPlayer({
   video,
   initialProgress = 0,
@@ -62,7 +89,6 @@ export function VideoPlayer({
     null,
   );
   const seekHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const speedOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speedGestureRef = useRef({
     pointerId: -1,
     startX: 0,
@@ -91,6 +117,8 @@ export function VideoPlayer({
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(SPEED_DEFAULT);
   const [showSpeedOverlay, setShowSpeedOverlay] = useState(false);
+  const [forceLandscape, setForceLandscape] = useState(false);
+  const orientationLockedRef = useRef(false);
 
   const qualityOptions: VideoQualityOption[] = useMemo(() => {
     if (video.qualities?.length) {
@@ -161,24 +189,19 @@ export function VideoPlayer({
     setPlaybackRate(clamped);
   }, []);
 
-  const showSpeedFeedback = useCallback(() => {
-    setShowSpeedOverlay(true);
-    if (speedOverlayTimerRef.current) clearTimeout(speedOverlayTimerRef.current);
-    speedOverlayTimerRef.current = setTimeout(() => setShowSpeedOverlay(false), 1500);
-  }, []);
-
   const activateSpeedGesture = useCallback(
     (clientX: number) => {
       const g = speedGestureRef.current;
       g.active = true;
       g.startX = clientX;
-      g.startRate = playbackRate;
+      g.startRate = SPEED_DEFAULT;
       isSpeedGesturingRef.current = true;
+      applyPlaybackRate(SPEED_DEFAULT);
       setShowSpeedOverlay(true);
       clearHideTimer();
       setShowControls(true);
     },
-    [playbackRate, clearHideTimer],
+    [clearHideTimer, applyPlaybackRate],
   );
 
   const updateSpeedFromPointer = useCallback(
@@ -202,13 +225,14 @@ export function VideoPlayer({
     g.active = false;
     g.pointerId = -1;
     if (wasActive) {
-      showSpeedFeedback();
+      applyPlaybackRate(SPEED_DEFAULT);
+      setShowSpeedOverlay(false);
       if (playing) scheduleHideControls();
     }
     setTimeout(() => {
       isSpeedGesturingRef.current = false;
     }, 50);
-  }, [showSpeedFeedback, playing, scheduleHideControls]);
+  }, [applyPlaybackRate, playing, scheduleHideControls]);
 
   const handleSpeedPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -219,7 +243,7 @@ export function VideoPlayer({
       g.pointerId = e.pointerId;
       g.startX = e.clientX;
       g.startY = e.clientY;
-      g.startRate = playbackRate;
+      g.startRate = SPEED_DEFAULT;
       g.active = false;
 
       if (g.holdTimer) clearTimeout(g.holdTimer);
@@ -230,36 +254,18 @@ export function VideoPlayer({
         }
       }, SPEED_HOLD_MS);
     },
-    [playbackRate, activateSpeedGesture],
+    [activateSpeedGesture],
   );
 
   const handleSpeedPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       const g = speedGestureRef.current;
-      if (g.pointerId !== e.pointerId) return;
-
-      const deltaX = e.clientX - g.startX;
-      const deltaY = e.clientY - g.startY;
-
-      if (!g.active) {
-        if (
-          Math.abs(deltaX) > SPEED_ACTIVATION_PX &&
-          Math.abs(deltaX) > Math.abs(deltaY)
-        ) {
-          if (g.holdTimer) {
-            clearTimeout(g.holdTimer);
-            g.holdTimer = null;
-          }
-          activateSpeedGesture(g.startX);
-          containerRef.current?.setPointerCapture(e.pointerId);
-        }
-        return;
-      }
+      if (g.pointerId !== e.pointerId || !g.active) return;
 
       e.preventDefault();
       updateSpeedFromPointer(e.clientX);
     },
-    [activateSpeedGesture, updateSpeedFromPointer],
+    [updateSpeedFromPointer],
   );
 
   const handleSpeedPointerEnd = useCallback(
@@ -341,30 +347,52 @@ export function VideoPlayer({
     const el = videoRef.current as WebKitVideoElement | null;
     if (!container || !el) return;
 
-    if (isIosDevice() && el.webkitEnterFullscreen) {
+    const mobile = isMobileDevice();
+    const isNativeIosFs = isIosDevice() && el.webkitDisplayingFullscreen;
+
+    if (document.fullscreenElement || isNativeIosFs) {
+      setForceLandscape(false);
+      if (orientationLockedRef.current) {
+        await unlockLandscape();
+        orientationLockedRef.current = false;
+      }
       try {
-        if (el.webkitDisplayingFullscreen) {
-          el.webkitExitFullscreen?.();
-        } else {
-          el.webkitEnterFullscreen();
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
         }
       } catch {
-        // iOS fullscreen unavailable
+        // ignore
+      }
+      if (isNativeIosFs) {
+        try {
+          el.webkitExitFullscreen?.();
+        } catch {
+          // ignore
+        }
       }
       return;
     }
 
     try {
-      if (!document.fullscreenElement) {
-        await container.requestFullscreen();
-      } else {
-        await document.exitFullscreen();
+      await container.requestFullscreen();
+      setIsFullscreen(true);
+
+      if (mobile) {
+        const locked = await lockLandscape();
+        orientationLockedRef.current = locked;
+        if (!locked && window.matchMedia('(orientation: portrait)').matches) {
+          setForceLandscape(true);
+        }
       }
+      return;
     } catch {
-      try {
-        await el.requestFullscreen();
-      } catch {
-        // Fullscreen not supported
+      // Container fullscreen unavailable — fall back to native video fullscreen on iOS.
+      if (isIosDevice() && el.webkitEnterFullscreen) {
+        try {
+          el.webkitEnterFullscreen();
+        } catch {
+          // Fullscreen not supported
+        }
       }
     }
   }, []);
@@ -458,11 +486,46 @@ export function VideoPlayer({
 
   useEffect(() => {
     const onFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const isFs = !!document.fullscreenElement;
+      setIsFullscreen(isFs);
+      if (!isFs) {
+        setForceLandscape(false);
+        if (orientationLockedRef.current) {
+          void unlockLandscape();
+          orientationLockedRef.current = false;
+        }
+      }
     };
+
+    const onOrientationChange = () => {
+      if (window.matchMedia('(orientation: landscape)').matches) {
+        setForceLandscape(false);
+      }
+    };
+
     document.addEventListener('fullscreenchange', onFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
-  }, []);
+    window.addEventListener('orientationchange', onOrientationChange);
+
+    const el = videoRef.current as WebKitVideoElement | null;
+    const onWebkitBegin = () => setIsFullscreen(true);
+    const onWebkitEnd = () => {
+      setIsFullscreen(false);
+      setForceLandscape(false);
+    };
+    el?.addEventListener('webkitbeginfullscreen', onWebkitBegin);
+    el?.addEventListener('webkitendfullscreen', onWebkitEnd);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      window.removeEventListener('orientationchange', onOrientationChange);
+      el?.removeEventListener('webkitbeginfullscreen', onWebkitBegin);
+      el?.removeEventListener('webkitendfullscreen', onWebkitEnd);
+      if (orientationLockedRef.current) {
+        void unlockLandscape();
+        orientationLockedRef.current = false;
+      }
+    };
+  }, [activeSourceUrl]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -520,7 +583,6 @@ export function VideoPlayer({
     return () => {
       clearHideTimer();
       if (seekHintTimerRef.current) clearTimeout(seekHintTimerRef.current);
-      if (speedOverlayTimerRef.current) clearTimeout(speedOverlayTimerRef.current);
       const g = speedGestureRef.current;
       if (g.holdTimer) clearTimeout(g.holdTimer);
     };
@@ -580,7 +642,8 @@ export function VideoPlayer({
         'group/player relative aspect-video w-full max-h-[56.25vw] touch-manipulation overflow-hidden bg-black',
         'sm:max-h-none',
         'rounded-none sm:rounded-xl',
-        isFullscreen && 'max-h-none rounded-none',
+        isFullscreen && 'aspect-auto h-full w-full max-h-none rounded-none',
+        forceLandscape && 'player-landscape-fallback',
       )}
       onPointerDown={handleSpeedPointerDown}
       onPointerMove={handleSpeedPointerMove}
@@ -693,21 +756,8 @@ export function VideoPlayer({
       )}
 
       {qualityOptions.length > 1 && (
-        <div className="pointer-events-none absolute right-3 top-3 flex flex-col items-end gap-1">
-          <div className="rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur-sm sm:text-xs">
-            {activeQualityLabel}
-          </div>
-          {Math.abs(playbackRate - SPEED_DEFAULT) > 0.01 && (
-            <div className="rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-medium text-amber-300 backdrop-blur-sm sm:text-xs">
-              {formatPlaybackRate(playbackRate)}
-            </div>
-          )}
-        </div>
-      )}
-
-      {qualityOptions.length <= 1 && Math.abs(playbackRate - SPEED_DEFAULT) > 0.01 && (
-        <div className="pointer-events-none absolute right-3 top-3 rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-medium text-amber-300 backdrop-blur-sm sm:text-xs">
-          {formatPlaybackRate(playbackRate)}
+        <div className="pointer-events-none absolute right-3 top-3 rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur-sm sm:text-xs">
+          {activeQualityLabel}
         </div>
       )}
 
@@ -737,13 +787,10 @@ export function VideoPlayer({
       )}
 
       {showSpeedOverlay && (
-        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-          <div className="rounded-2xl bg-black/75 px-6 py-4 text-center backdrop-blur-sm">
-            <p className="text-3xl font-bold tabular-nums text-white">
-              {formatPlaybackRate(playbackRate)}
-            </p>
-            <p className="mt-1.5 text-xs text-zinc-400">← slower · faster →</p>
-          </div>
+        <div className="pointer-events-none absolute left-1/2 top-10 z-20 -translate-x-1/2 sm:top-12">
+          <p className="rounded-md bg-black/55 px-2.5 py-1 text-xs font-medium tabular-nums text-white/95 backdrop-blur-sm">
+            {formatPlaybackRate(playbackRate)}
+          </p>
         </div>
       )}
 

@@ -119,7 +119,7 @@ export default function WatchPage({
           <p className="text-center text-xs text-zinc-500 sm:text-left md:text-zinc-600">
             <span className="sm:hidden">Double-tap sides to skip · Hold & slide for speed</span>
             <span className="hidden sm:inline">
-              Double-tap left/right to skip 10s · Hold & slide ← slower / faster → for speed · Gear icon for quality
+              Double-tap left/right to skip 10s · Hold & slide ← slower / faster → (release to reset) · Gear icon for quality
             </span>
           </p>
         </div>
