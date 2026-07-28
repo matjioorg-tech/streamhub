@@ -4,6 +4,7 @@ import { use } from 'react';
 import Link from 'next/link';
 import { PageLayout } from '@/components/layout/page-layout';
 import { VideoPlayer } from '@/components/video/video-player';
+import { VideoMetadataPanel } from '@/components/video/video-metadata-panel';
 import { useVideo } from '@/hooks/use-videos';
 import { formatViews, formatDuration, cn } from '@/lib/utils';
 import { Eye, Calendar, Film } from 'lucide-react';
@@ -77,16 +78,7 @@ export default function WatchPage({
             </div>
           </div>
 
-          {video.description && (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-                Description
-              </h2>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-300 sm:text-base">
-                {video.description}
-              </p>
-            </div>
-          )}
+          <VideoMetadataPanel video={video} />
 
           {video.videoTags && video.videoTags.length > 0 && (
             <div className="flex flex-wrap gap-2">

@@ -32,6 +32,7 @@ export interface Video {
   title: string;
   slug: string;
   description: string | null;
+  summary: string | null;
   status: string;
   visibility: string;
   duration: number | null;
@@ -46,6 +47,12 @@ export interface Video {
   likes: number;
   publishedAt: string | null;
   createdAt: string;
+  subCategory: string | null;
+  contentType: string | null;
+  language: string | null;
+  ageRating: string | null;
+  keywords: string[] | null;
+  category?: Category | null;
   videoTags?: { tag: Tag }[];
 }
 
