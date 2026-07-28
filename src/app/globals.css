@@ -61,23 +61,30 @@ input[type='range']::-webkit-slider-runnable-track {
   background: rgba(255, 255, 255, 0.25);
 }
 
-/* Fullscreen video player fills the screen */
-.group\/player:fullscreen {
-  width: 100vw;
-  height: 100vh;
-  max-height: none;
+/* Fullscreen video player */
+.group\/player:fullscreen,
+.group\/player:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: none !important;
   aspect-ratio: auto;
+  background: #000;
 }
 
-/* Rotate into landscape when orientation lock is unavailable (e.g. iOS Safari) */
-.player-landscape-fallback {
+body.video-fullscreen header,
+body.video-fullscreen nav[class*='fixed'][class*='bottom'] {
+  display: none !important;
+}
+
+/* Landscape layout inside fullscreen when orientation lock unavailable */
+.group\/player:fullscreen.player-landscape-fallback,
+.group\/player:-webkit-full-screen.player-landscape-fallback {
   position: fixed !important;
-  top: 50% !important;
-  left: 50% !important;
+  top: 0 !important;
+  left: 0 !important;
   width: 100vh !important;
   height: 100vw !important;
   max-height: none !important;
-  transform: translate(-50%, -50%) rotate(90deg);
-  transform-origin: center center;
-  z-index: 9999;
+  transform: rotate(90deg) translateY(-100vh);
+  transform-origin: top left;
 }

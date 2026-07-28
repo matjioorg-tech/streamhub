@@ -67,7 +67,7 @@ export default function WatchPage({
         </div>
 
         <div className="space-y-4 px-4 pb-[env(safe-area-inset-bottom)] md:px-0">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
             <h1 className="text-xl font-bold leading-snug text-white sm:text-2xl lg:text-3xl">
               {displayVideo.title}
@@ -94,7 +94,9 @@ export default function WatchPage({
               )}
             </div>
             </div>
-            <AdminVideoEditButton video={displayVideo} onUpdated={handleVideoUpdated} />
+            <div className="shrink-0 pt-0.5">
+              <AdminVideoEditButton video={displayVideo} onUpdated={handleVideoUpdated} />
+            </div>
           </div>
 
           <VideoMetadataPanel video={displayVideo} />
@@ -116,12 +118,6 @@ export default function WatchPage({
             </div>
           )}
 
-          <p className="text-center text-xs text-zinc-500 sm:text-left md:text-zinc-600">
-            <span className="sm:hidden">Double-tap sides to skip · Hold & slide for speed</span>
-            <span className="hidden sm:inline">
-              Double-tap left/right to skip 10s · Hold & slide ← slower / faster → (release to reset) · Gear icon for quality
-            </span>
-          </p>
         </div>
       </div>
     </PageLayout>
