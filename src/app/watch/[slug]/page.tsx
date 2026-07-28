@@ -66,35 +66,35 @@ export default function WatchPage({
           <VideoPlayer video={displayVideo} />
         </div>
 
-        <div className="space-y-4 px-4 pb-[env(safe-area-inset-bottom)] md:px-0">
-          <div className="flex items-start gap-3">
+        <div className="space-y-3 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:space-y-4 md:px-0">
+          <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-bold leading-snug text-white sm:text-2xl lg:text-3xl">
-              {displayVideo.title}
-            </h1>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-400">
-              <span className="inline-flex items-center gap-1.5">
-                <Eye className="h-4 w-4" />
-                {formatViews(displayVideo.views)} views
-              </span>
-              {displayVideo.publishedAt && (
-                <span className="inline-flex items-center gap-1.5">
-                  <Calendar className="h-4 w-4" />
-                  {new Date(displayVideo.publishedAt).toLocaleDateString(undefined, {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                  })}
+              <h1 className="text-[15px] font-semibold leading-snug text-white sm:text-xl lg:text-2xl">
+                {displayVideo.title}
+              </h1>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-zinc-500 sm:mt-2 sm:text-sm">
+                <span className="inline-flex items-center gap-1">
+                  <Eye className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                  {formatViews(displayVideo.views)} views
                 </span>
-              )}
-              {displayVideo.duration != null && displayVideo.duration > 0 && (
-                <span className="rounded-md bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">
-                  {formatDuration(displayVideo.duration)}
-                </span>
-              )}
+                {displayVideo.publishedAt && (
+                  <span className="inline-flex items-center gap-1">
+                    <Calendar className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                    {new Date(displayVideo.publishedAt).toLocaleDateString(undefined, {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </span>
+                )}
+                {displayVideo.duration != null && displayVideo.duration > 0 && (
+                  <span className="hidden rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] text-zinc-400 sm:inline">
+                    {formatDuration(displayVideo.duration)}
+                  </span>
+                )}
+              </div>
             </div>
-            </div>
-            <div className="shrink-0 pt-0.5">
+            <div className="shrink-0">
               <AdminVideoEditButton video={displayVideo} onUpdated={handleVideoUpdated} />
             </div>
           </div>

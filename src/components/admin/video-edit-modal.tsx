@@ -80,7 +80,6 @@ export function VideoEditModal({ video, onClose, onSaved }: VideoEditModalProps)
       const generated = await regenerateMetadata.mutateAsync(video.id);
       if (generated) {
         setTitle(generated.title);
-        setSlug(generated.slug);
         setDescription(generated.description ?? '');
         setSummary(generated.summary ?? '');
         setSubCategory(generated.subCategory ?? '');

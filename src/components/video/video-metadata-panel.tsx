@@ -5,12 +5,12 @@ interface VideoMetadataPanelProps {
   video: Video;
 }
 
-function MetadataItem({ label, value }: { label: string; value: string }) {
+function MetaChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0">
-      <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</dt>
-      <dd className="mt-0.5 break-words text-sm text-zinc-200">{value}</dd>
-    </div>
+    <span className="inline-flex items-center gap-1 rounded-full border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 text-xs text-zinc-300">
+      <span className="text-zinc-500">{label}</span>
+      <span className="text-zinc-200">{value}</span>
+    </span>
   );
 }
 
@@ -29,51 +29,49 @@ export function VideoMetadataPanel({ video }: VideoMetadataPanelProps) {
     return null;
   }
 
+  const metaChips: { label: string; value: string }[] = [];
+  if (video.category?.name) metaChips.push({ label: 'Category', value: video.category.name });
+  if (video.subCategory) metaChips.push({ label: 'Creator', value: video.subCategory });
+  if (video.contentType) metaChips.push({ label: 'Type', value: video.contentType });
+  if (video.language && video.language !== 'Unknown') {
+    metaChips.push({ label: 'Language', value: video.language });
+  }
+  if (video.ageRating) metaChips.push({ label: 'Rating', value: video.ageRating });
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {video.summary && (
-        <p className="text-sm leading-relaxed text-zinc-300 sm:text-base">{video.summary}</p>
+        <p className="text-[13px] leading-relaxed text-zinc-400 sm:text-sm">{video.summary}</p>
       )}
 
-      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        {video.category?.name && (
-          <MetadataItem label="Category" value={video.category.name} />
-        )}
-        {video.subCategory && <MetadataItem label="Creator / Series" value={video.subCategory} />}
-        {video.contentType && <MetadataItem label="Type" value={video.contentType} />}
-        {video.language && video.language !== 'Unknown' && (
-          <MetadataItem label="Language" value={video.language} />
-        )}
-        {video.ageRating && <MetadataItem label="Age rating" value={video.ageRating} />}
-      </dl>
+      {metaChips.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {metaChips.map((chip) => (
+            <MetaChip key={chip.label} label={chip.label} value={chip.value} />
+          ))}
+        </div>
+      )}
 
       {video.description && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-            Description
-          </h2>
-          <p className="break-words whitespace-pre-wrap text-sm leading-relaxed text-zinc-300 sm:text-base">
+        <div className="rounded-lg border border-zinc-800/80 bg-zinc-900/40 px-3 py-2.5 sm:px-4 sm:py-3">
+          <p className="mb-1.5 text-[11px] font-medium text-zinc-500">Description</p>
+          <p className="break-words whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-300 sm:text-sm">
             {video.description}
           </p>
         </div>
       )}
 
       {video.keywords && video.keywords.length > 0 && (
-        <div>
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-            Keywords
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {video.keywords.map((keyword) => (
-              <Link
-                key={keyword}
-                href={`/search?q=${encodeURIComponent(keyword)}`}
-                className="rounded-full border border-zinc-700 bg-zinc-800/80 px-3 py-1 text-xs text-zinc-300 transition-colors hover:border-red-500/50 hover:text-white"
-              >
-                {keyword}
-              </Link>
-            ))}
-          </div>
+        <div className="flex flex-wrap gap-1.5">
+          {video.keywords.map((keyword) => (
+            <Link
+              key={keyword}
+              href={`/search?q=${encodeURIComponent(keyword)}`}
+              className="rounded-full border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:border-red-500/40 hover:text-zinc-200"
+            >
+              {keyword}
+            </Link>
+          ))}
         </div>
       )}
     </div>
