@@ -59,8 +59,13 @@ async function requestElementFullscreen(el: HTMLElement): Promise<void> {
 }
 
 async function exitElementFullscreen(): Promise<void> {
+  const doc = document as Document & { webkitExitFullscreen?: () => Promise<void> };
   if (document.fullscreenElement) {
     await document.exitFullscreen();
+    return;
+  }
+  if (doc.webkitExitFullscreen) {
+    await doc.webkitExitFullscreen();
   }
 }
 
@@ -160,6 +165,7 @@ export function VideoPlayer({
   const [showSpeedOverlay, setShowSpeedOverlay] = useState(false);
   const [forceLandscape, setForceLandscape] = useState(false);
   const [gestureActive, setGestureActive] = useState(false);
+  const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
   const orientationLockedRef = useRef(false);
 
   const qualityOptions: VideoQualityOption[] = useMemo(() => {
@@ -422,48 +428,85 @@ export function VideoPlayer({
     }
   }, [attemptPlay]);
 
+  const exitFullscreenMode = useCallback(async () => {
+    const el = videoRef.current as WebKitVideoElement | null;
+
+    setPseudoFullscreen(false);
+    setForceLandscape(false);
+    document.body.classList.remove('video-fullscreen', 'video-pseudo-fullscreen');
+
+    if (orientationLockedRef.current) {
+      await unlockLandscape();
+      orientationLockedRef.current = false;
+    }
+
+    try {
+      await exitElementFullscreen();
+    } catch {
+      // ignore
+    }
+
+    if (el?.webkitDisplayingFullscreen) {
+      try {
+        el.webkitExitFullscreen?.();
+      } catch {
+        // ignore — user can tap Done on iOS
+      }
+    }
+
+    setIsFullscreen(false);
+  }, []);
+
+  const enterPseudoFullscreen = useCallback(async () => {
+    setPseudoFullscreen(true);
+    setIsFullscreen(true);
+    document.body.classList.add('video-fullscreen', 'video-pseudo-fullscreen');
+
+    const mobile = isMobileDevice();
+    if (mobile) {
+      const locked = await lockLandscape();
+      orientationLockedRef.current = locked;
+      if (!locked && window.matchMedia('(orientation: portrait)').matches) {
+        setForceLandscape(true);
+      }
+    }
+  }, []);
+
+  /** iOS Safari requires a synchronous call from click — no await before webkitEnterFullscreen */
+  const enterIosNativeFullscreen = useCallback(() => {
+    const el = videoRef.current as WebKitVideoElement | null;
+    if (!el?.webkitEnterFullscreen) return false;
+
+    try {
+      if (el.paused) {
+        void el.play().catch(() => undefined);
+      }
+      el.webkitEnterFullscreen();
+      setIsFullscreen(true);
+      document.body.classList.add('video-fullscreen');
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const toggleFullscreen = useCallback(async () => {
     const container = containerRef.current;
     const el = videoRef.current as WebKitVideoElement | null;
     if (!container || !el) return;
 
-    const mobile = isMobileDevice();
-    const isNativeIosFs = isIosDevice() && el.webkitDisplayingFullscreen;
-    const isFs = !!document.fullscreenElement || isNativeIosFs;
+    const isNativeIosFs = isIosDevice() && !!el.webkitDisplayingFullscreen;
+    const isFs = !!document.fullscreenElement || isNativeIosFs || pseudoFullscreen;
 
     if (isFs) {
-      setForceLandscape(false);
-      document.body.classList.remove('video-fullscreen');
-      if (orientationLockedRef.current) {
-        await unlockLandscape();
-        orientationLockedRef.current = false;
-      }
-      try {
-        await exitElementFullscreen();
-      } catch {
-        // ignore
-      }
-      if (isNativeIosFs) {
-        try {
-          el.webkitExitFullscreen?.();
-        } catch {
-          // ignore
-        }
-      }
-      setIsFullscreen(false);
+      await exitFullscreenMode();
       return;
     }
 
-    // iOS Safari: native video fullscreen is most reliable
-    if (isIosDevice() && el.webkitEnterFullscreen) {
-      try {
-        el.webkitEnterFullscreen();
-        setIsFullscreen(true);
-        document.body.classList.add('video-fullscreen');
-        return;
-      } catch {
-        // fall through to container fullscreen
-      }
+    if (isIosDevice()) {
+      if (enterIosNativeFullscreen()) return;
+      await enterPseudoFullscreen();
+      return;
     }
 
     try {
@@ -471,7 +514,7 @@ export function VideoPlayer({
       setIsFullscreen(true);
       document.body.classList.add('video-fullscreen');
 
-      if (mobile) {
+      if (isMobileDevice()) {
         const locked = await lockLandscape();
         orientationLockedRef.current = locked;
         if (!locked && window.matchMedia('(orientation: portrait)').matches) {
@@ -479,18 +522,30 @@ export function VideoPlayer({
         }
       }
     } catch {
-      // Last resort: video element fullscreen
-      if (el.webkitEnterFullscreen) {
-        try {
-          el.webkitEnterFullscreen();
-          setIsFullscreen(true);
-          document.body.classList.add('video-fullscreen');
-        } catch {
-          // Fullscreen not supported
-        }
-      }
+      if (el.webkitEnterFullscreen && enterIosNativeFullscreen()) return;
+      await enterPseudoFullscreen();
     }
-  }, []);
+  }, [enterIosNativeFullscreen, enterPseudoFullscreen, exitFullscreenMode, pseudoFullscreen]);
+
+  const handleFullscreenClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const el = videoRef.current as WebKitVideoElement | null;
+
+      if (isIosDevice() && el) {
+        if (el.webkitDisplayingFullscreen || pseudoFullscreen) {
+          void exitFullscreenMode();
+          return;
+        }
+        if (enterIosNativeFullscreen()) return;
+        void enterPseudoFullscreen();
+        return;
+      }
+
+      void toggleFullscreen();
+    },
+    [enterIosNativeFullscreen, enterPseudoFullscreen, exitFullscreenMode, pseudoFullscreen, toggleFullscreen],
+  );
 
   const getTapZone = useCallback((clientX: number): 'left' | 'right' | 'center' => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -573,18 +628,33 @@ export function VideoPlayer({
 
   useEffect(() => {
     const el = videoRef.current;
-    if (el && initialProgress > 0) {
+    if (!el) return;
+    el.setAttribute('playsinline', 'true');
+    el.setAttribute('webkit-playsinline', 'true');
+    el.setAttribute('x5-playsinline', 'true');
+    if (initialProgress > 0) {
       el.currentTime = initialProgress;
       setCurrentTime(initialProgress);
     }
-  }, [initialProgress]);
+  }, [activeSourceUrl, initialProgress]);
+
+  useEffect(() => {
+    if (!pseudoFullscreen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') void exitFullscreenMode();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pseudoFullscreen, exitFullscreenMode]);
 
   useEffect(() => {
     const onFullscreenChange = () => {
       const isFs = !!document.fullscreenElement;
-      setIsFullscreen(isFs);
-      document.body.classList.toggle('video-fullscreen', isFs);
-      if (!isFs) {
+      setIsFullscreen(isFs || pseudoFullscreen);
+      document.body.classList.toggle('video-fullscreen', isFs || pseudoFullscreen);
+      if (!isFs && !pseudoFullscreen) {
         setForceLandscape(false);
         if (orientationLockedRef.current) {
           void unlockLandscape();
@@ -608,9 +678,11 @@ export function VideoPlayer({
       document.body.classList.add('video-fullscreen');
     };
     const onWebkitEnd = () => {
-      setIsFullscreen(false);
-      setForceLandscape(false);
-      document.body.classList.remove('video-fullscreen');
+      setIsFullscreen(pseudoFullscreen);
+      if (!pseudoFullscreen) {
+        setForceLandscape(false);
+        document.body.classList.remove('video-fullscreen');
+      }
     };
     el?.addEventListener('webkitbeginfullscreen', onWebkitBegin);
     el?.addEventListener('webkitendfullscreen', onWebkitEnd);
@@ -620,13 +692,13 @@ export function VideoPlayer({
       window.removeEventListener('orientationchange', onOrientationChange);
       el?.removeEventListener('webkitbeginfullscreen', onWebkitBegin);
       el?.removeEventListener('webkitendfullscreen', onWebkitEnd);
-      document.body.classList.remove('video-fullscreen');
+      document.body.classList.remove('video-fullscreen', 'video-pseudo-fullscreen');
       if (orientationLockedRef.current) {
         void unlockLandscape();
         orientationLockedRef.current = false;
       }
     };
-  }, [activeSourceUrl]);
+  }, [activeSourceUrl, pseudoFullscreen]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -742,9 +814,10 @@ export function VideoPlayer({
       ref={containerRef}
       className={cn(
         'group/player relative w-full overflow-hidden bg-black select-none',
-        'aspect-video max-h-[56.25vw] sm:max-h-none',
+        'h-[56.25vw] min-h-[220px] sm:aspect-video sm:h-auto sm:min-h-0',
         'rounded-none sm:rounded-xl',
-        isFullscreen && 'aspect-auto h-full max-h-none rounded-none',
+        (isFullscreen || pseudoFullscreen) && 'aspect-auto h-full max-h-none rounded-none',
+        pseudoFullscreen && 'player-pseudo-fullscreen',
         forceLandscape && 'player-landscape-fallback',
         gestureActive && 'touch-none',
       )}
@@ -780,10 +853,8 @@ export function VideoPlayer({
         ref={videoRef}
         key={activeSourceUrl}
         src={activeSourceUrl}
-        className="h-full w-full object-contain"
+        className="absolute inset-0 h-full w-full object-cover sm:object-contain"
         playsInline
-        webkit-playsinline="true"
-        x5-playsinline="true"
         preload="auto"
         poster={video.posterUrl ?? video.thumbnailUrl ?? undefined}
         onPlay={() => {
@@ -909,18 +980,165 @@ export function VideoPlayer({
         </button>
       )}
 
-      {/* Bottom controls */}
+      {/* Bottom controls — progress bar pinned to bottom edge */}
       <div
         className={cn(
-          'absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/95 via-black/60 to-transparent transition-opacity duration-200',
+          'absolute inset-x-0 bottom-0 z-20 transition-opacity duration-200',
           controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
         onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* Progress bar */}
+        {/* Buttons + gradient above progress */}
+        <div className="bg-gradient-to-t from-black/95 via-black/50 to-transparent px-2 pb-1 pt-6 sm:px-3 sm:pt-8">
+          <div className="flex items-center gap-0.5 sm:gap-1">
+            <button
+              type="button"
+              onClick={togglePlay}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-white active:bg-white/15"
+              aria-label={playing ? 'Pause' : 'Play'}
+            >
+              {playing ? (
+                <Pause className="h-5 w-5 fill-current" />
+              ) : (
+                <Play className="h-5 w-5 fill-current" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => seekRelative(-SEEK_SECONDS)}
+              className="hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
+              aria-label={`Rewind ${SEEK_SECONDS} seconds`}
+            >
+              <SkipBack className="h-4 w-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => seekRelative(SEEK_SECONDS)}
+              className="hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
+              aria-label={`Forward ${SEEK_SECONDS} seconds`}
+            >
+              <SkipForward className="h-4 w-4" />
+            </button>
+
+            <span className="ml-1 text-[11px] tabular-nums text-white/80 sm:text-xs">
+              {formatDuration(currentTime)}
+              <span className="text-white/40"> / </span>
+              {formatDuration(duration)}
+            </span>
+
+            <div className="flex-1" />
+
+            <button
+              type="button"
+              onClick={() => {
+                const el = videoRef.current;
+                if (!el) return;
+                el.muted = !el.muted;
+                setMuted(el.muted);
+              }}
+              className="hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
+              aria-label={muted ? 'Unmute' : 'Mute'}
+            >
+              {muted || volume === 0 ? (
+                <VolumeX className="h-4 w-4" />
+              ) : (
+                <Volume2 className="h-4 w-4" />
+              )}
+            </button>
+
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={muted ? 0 : volume}
+              onChange={(e) => {
+                const el = videoRef.current;
+                if (!el) return;
+                const v = parseFloat(e.target.value);
+                el.volume = v;
+                el.muted = v === 0;
+                setVolume(v);
+                setMuted(v === 0);
+              }}
+              className="hidden h-1 w-16 accent-red-500 sm:block"
+              aria-label="Volume"
+            />
+
+            {qualityOptions.length > 0 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowQualityMenu((v) => !v);
+                    setShowControls(true);
+                    clearHideTimer();
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-white active:bg-white/15"
+                  aria-label="Quality"
+                >
+                  <Settings className="h-[18px] w-[18px]" />
+                </button>
+                {showQualityMenu && (
+                  <div className="absolute bottom-full right-0 mb-2 min-w-[130px] overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-900/95 py-1 shadow-2xl backdrop-blur-md">
+                    <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Quality
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedQuality('auto');
+                        setShowQualityMenu(false);
+                        scheduleHideControls();
+                      }}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs text-white active:bg-white/10"
+                    >
+                      <span>Auto{qualityOptions[0] ? ` (${qualityOptions[0].label})` : ''}</span>
+                      {selectedQuality === 'auto' && <Check className="h-3.5 w-3.5 text-red-400" />}
+                    </button>
+                    {qualityOptions.map((q) => (
+                      <button
+                        key={q.label}
+                        type="button"
+                        onClick={() => {
+                          setSelectedQuality(q.label);
+                          setShowQualityMenu(false);
+                          scheduleHideControls();
+                        }}
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs text-white active:bg-white/10"
+                      >
+                        <span>{q.label}{q.isOriginal ? ' · Source' : ''}</span>
+                        {selectedQuality === q.label && <Check className="h-3.5 w-3.5 text-red-400" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleFullscreenClick}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-white active:bg-white/15"
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            >
+              {isFullscreen ? (
+                <Minimize className="h-[18px] w-[18px]" />
+              ) : (
+                <Maximize className="h-[18px] w-[18px]" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Progress bar — flush with bottom edge */}
         <div
           data-progress
-          className="relative mx-3 mb-1 h-5 cursor-pointer sm:mx-4 sm:mb-2 sm:h-4"
+          className="relative h-7 w-full cursor-pointer touch-none"
           onPointerDown={(e) => {
             isScrubbingRef.current = true;
             setGestureActive(true);
@@ -939,7 +1157,7 @@ export function VideoPlayer({
             if (playing) scheduleHideControls();
           }}
         >
-          <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 overflow-hidden rounded-full bg-white/20">
+          <div className="absolute inset-x-3 bottom-[max(0.35rem,env(safe-area-inset-bottom))] h-[3px] overflow-hidden rounded-full bg-white/20 sm:inset-x-4">
             <div
               className="absolute inset-y-0 left-0 bg-white/25"
               style={{ width: `${buffered}%` }}
@@ -951,158 +1169,11 @@ export function VideoPlayer({
           </div>
           <div
             className={cn(
-              'absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500 shadow transition-opacity',
+              'absolute bottom-[max(0.2rem,env(safe-area-inset-bottom))] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-red-500 shadow transition-opacity',
               controlsVisible ? 'opacity-100' : 'opacity-0',
             )}
             style={{ left: `${progress}%` }}
           />
-        </div>
-
-        {/* Control buttons */}
-        <div className="flex items-center gap-0.5 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-0.5 sm:gap-1 sm:px-3 sm:pb-3">
-          <button
-            type="button"
-            onClick={togglePlay}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-white active:bg-white/15"
-            aria-label={playing ? 'Pause' : 'Play'}
-          >
-            {playing ? (
-              <Pause className="h-5 w-5 fill-current" />
-            ) : (
-              <Play className="h-5 w-5 fill-current" />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => seekRelative(-SEEK_SECONDS)}
-            className="hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
-            aria-label={`Rewind ${SEEK_SECONDS} seconds`}
-          >
-            <SkipBack className="h-4 w-4" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => seekRelative(SEEK_SECONDS)}
-            className="hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
-            aria-label={`Forward ${SEEK_SECONDS} seconds`}
-          >
-            <SkipForward className="h-4 w-4" />
-          </button>
-
-          <span className="ml-1 text-[11px] tabular-nums text-white/80 sm:text-xs">
-            {formatDuration(currentTime)}
-            <span className="text-white/40"> / </span>
-            {formatDuration(duration)}
-          </span>
-
-          <div className="flex-1" />
-
-          <button
-            type="button"
-            onClick={() => {
-              const el = videoRef.current;
-              if (!el) return;
-              el.muted = !el.muted;
-              setMuted(el.muted);
-            }}
-            className="hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
-            aria-label={muted ? 'Unmute' : 'Mute'}
-          >
-            {muted || volume === 0 ? (
-              <VolumeX className="h-4 w-4" />
-            ) : (
-              <Volume2 className="h-4 w-4" />
-            )}
-          </button>
-
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={muted ? 0 : volume}
-            onChange={(e) => {
-              const el = videoRef.current;
-              if (!el) return;
-              const v = parseFloat(e.target.value);
-              el.volume = v;
-              el.muted = v === 0;
-              setVolume(v);
-              setMuted(v === 0);
-            }}
-            className="hidden h-1 w-16 accent-red-500 sm:block"
-            aria-label="Volume"
-          />
-
-          {qualityOptions.length > 0 && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowQualityMenu((v) => !v);
-                  setShowControls(true);
-                  clearHideTimer();
-                }}
-                className="flex h-11 w-11 items-center justify-center rounded-full text-white active:bg-white/15"
-                aria-label="Quality"
-              >
-                <Settings className="h-[18px] w-[18px]" />
-              </button>
-              {showQualityMenu && (
-                <div className="absolute bottom-full right-0 mb-2 min-w-[130px] overflow-hidden rounded-lg border border-zinc-700/80 bg-zinc-900/95 py-1 shadow-2xl backdrop-blur-md">
-                  <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                    Quality
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedQuality('auto');
-                      setShowQualityMenu(false);
-                      scheduleHideControls();
-                    }}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs text-white active:bg-white/10"
-                  >
-                    <span>Auto{qualityOptions[0] ? ` (${qualityOptions[0].label})` : ''}</span>
-                    {selectedQuality === 'auto' && <Check className="h-3.5 w-3.5 text-red-400" />}
-                  </button>
-                  {qualityOptions.map((q) => (
-                    <button
-                      key={q.label}
-                      type="button"
-                      onClick={() => {
-                        setSelectedQuality(q.label);
-                        setShowQualityMenu(false);
-                        scheduleHideControls();
-                      }}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs text-white active:bg-white/10"
-                    >
-                      <span>{q.label}{q.isOriginal ? ' · Source' : ''}</span>
-                      {selectedQuality === q.label && <Check className="h-3.5 w-3.5 text-red-400" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onPointerUp={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              void toggleFullscreen();
-            }}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-white active:bg-white/15"
-            aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          >
-            {isFullscreen ? (
-              <Minimize className="h-[18px] w-[18px]" />
-            ) : (
-              <Maximize className="h-[18px] w-[18px]" />
-            )}
-          </button>
         </div>
       </div>
     </div>
