@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useAdminVideos } from '@/hooks/use-admin';
 import { adminApi } from '@/lib/api';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { AdminVideoEditButton } from '@/components/admin/admin-video-edit-button';
 
 type DeleteRequest =
   | { type: 'one'; id: string; title: string }
@@ -167,6 +168,10 @@ export default function AdminVideosPage() {
                   </td>
                   <td className="p-3">{video.views}</td>
                   <td className="space-x-2 p-3">
+                    <AdminVideoEditButton
+                      video={video}
+                      onUpdated={() => refetch()}
+                    />
                     {video.status !== 'published' && (
                       <button
                         type="button"

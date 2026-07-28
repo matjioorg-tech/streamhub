@@ -17,6 +17,8 @@ import type {
   User,
   TeraboxSettings,
   TeraboxTestResult,
+  UpdateVideoInput,
+  GeneratedVideoMetadata,
 } from './types';
 
 export interface VideoQueryParams {
@@ -136,6 +138,16 @@ export const adminApi = {
 
   videos: async (): Promise<Video[]> => {
     const response = await apiClient.get('/admin/videos');
+    return unwrap(response);
+  },
+
+  updateVideo: async (id: string, input: UpdateVideoInput): Promise<Video> => {
+    const response = await apiClient.patch(`/admin/videos/${id}`, input);
+    return unwrap(response);
+  },
+
+  regenerateVideoMetadata: async (id: string): Promise<GeneratedVideoMetadata | null> => {
+    const response = await apiClient.post(`/admin/videos/${id}/regenerate-metadata`);
     return unwrap(response);
   },
 

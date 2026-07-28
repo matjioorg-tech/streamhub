@@ -61,6 +61,8 @@ export function VideoPlayer({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [seekHint, setSeekHint] = useState<'back' | 'forward' | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const pendingPlayRef = useRef(false);
   const isScrubbingRef = useRef(false);
   const [selectedQuality, setSelectedQuality] = useState<string>('auto');
   const [showQualityMenu, setShowQualityMenu] = useState(false);
@@ -128,18 +130,46 @@ export function VideoPlayer({
     seekHintTimerRef.current = setTimeout(() => setSeekHint(null), 700);
   }, []);
 
+  const attemptPlay = useCallback(async () => {
+    const el = videoRef.current;
+    if (!el) return;
+
+    setPlaybackError(null);
+
+    if (el.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      pendingPlayRef.current = true;
+      setIsBuffering(true);
+      return;
+    }
+
+    try {
+      await el.play();
+      pendingPlayRef.current = false;
+      setIsBuffering(false);
+    } catch (err) {
+      const domError = err as DOMException;
+      if (domError.name === 'AbortError') {
+        return;
+      }
+      if (el.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        pendingPlayRef.current = true;
+        setIsBuffering(true);
+        return;
+      }
+      setIsBuffering(false);
+      setPlaybackError('Tap play to start playback');
+    }
+  }, []);
+
   const togglePlay = useCallback(() => {
     const el = videoRef.current;
     if (!el) return;
-    setPlaybackError(null);
     if (el.paused) {
-      void el.play().catch(() => {
-        setPlaybackError('Tap play to start playback');
-      });
+      void attemptPlay();
     } else {
       el.pause();
     }
-  }, []);
+  }, [attemptPlay]);
 
   const toggleFullscreen = useCallback(async () => {
     const container = containerRef.current;
@@ -337,7 +367,9 @@ export function VideoPlayer({
   }, [playing, showControls, scheduleHideControls, clearHideTimer]);
 
   useEffect(() => {
+    pendingPlayRef.current = false;
     setPlaybackError(null);
+    setIsBuffering(false);
   }, [activeSourceUrl]);
 
   if (!activeSourceUrl) {
@@ -386,10 +418,29 @@ export function VideoPlayer({
         playsInline
         webkit-playsinline="true"
         x5-playsinline="true"
-        preload="auto"
+        preload="metadata"
         poster={video.posterUrl ?? video.thumbnailUrl ?? undefined}
-        onPlay={() => setPlaying(true)}
+        onPlay={() => {
+          setPlaying(true);
+          setIsBuffering(false);
+          setPlaybackError(null);
+        }}
         onPause={() => setPlaying(false)}
+        onLoadedData={() => {
+          if (pendingPlayRef.current) {
+            void attemptPlay();
+          }
+        }}
+        onCanPlay={() => {
+          if (pendingPlayRef.current) {
+            void attemptPlay();
+          }
+        }}
+        onWaiting={() => setIsBuffering(true)}
+        onPlaying={() => {
+          setIsBuffering(false);
+          pendingPlayRef.current = false;
+        }}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         onTimeUpdate={(e) => {
           if (!isScrubbingRef.current) {
@@ -403,10 +454,21 @@ export function VideoPlayer({
             setBufferedEnd(el.buffered.end(el.buffered.length - 1));
           }
         }}
-        onError={() => setPlaybackError('Unable to play this video on your device')}
+        onError={() => {
+          setIsBuffering(false);
+          pendingPlayRef.current = false;
+          setPlaybackError('Unable to play this video. Check your connection and try again.');
+        }}
       >
         <source src={activeSourceUrl} type={sourceMimeType} />
       </video>
+
+      {isBuffering && !playbackError && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/50">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+          <p className="text-xs text-zinc-300">Loading video...</p>
+        </div>
+      )}
 
       {playbackError && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/80 px-6 text-center">
@@ -417,7 +479,7 @@ export function VideoPlayer({
             onClick={(e) => {
               e.stopPropagation();
               setPlaybackError(null);
-              togglePlay();
+              void attemptPlay();
             }}
             className="rounded-full bg-red-600 px-5 py-2 text-sm font-medium text-white"
           >
@@ -457,7 +519,7 @@ export function VideoPlayer({
         </div>
       )}
 
-      {!playing && !playbackError && (
+      {!playing && !playbackError && !isBuffering && (
         <button
           type="button"
           onClick={(e) => {

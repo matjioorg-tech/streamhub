@@ -1,14 +1,24 @@
 'use client';
 
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 import { PageLayout } from '@/components/layout/page-layout';
 import { VideoGrid } from '@/components/video/video-grid';
 import { useTrendingVideos, useLatestVideos } from '@/hooks/use-videos';
 import { Flame, Sparkles } from 'lucide-react';
+import type { Video } from '@/lib/api/types';
 
 export default function HomePage() {
+  const queryClient = useQueryClient();
   const { data: trending, isLoading: trendingLoading } = useTrendingVideos(8);
   const { data: latest, isLoading: latestLoading } = useLatestVideos(8);
+
+  const handleVideoUpdated = (video: Video) => {
+    queryClient.invalidateQueries({ queryKey: ['videos'] });
+    if (video.slug) {
+      queryClient.invalidateQueries({ queryKey: ['video', video.slug] });
+    }
+  };
 
   return (
     <PageLayout>
@@ -48,13 +58,23 @@ export default function HomePage() {
         {trendingLoading ? (
           <VideoGridSkeleton title="Trending" />
         ) : (
-          <VideoGrid videos={trending ?? []} title="Trending" />
+          <VideoGrid
+            videos={trending ?? []}
+            title="Trending"
+            adminEditable
+            onVideoUpdated={handleVideoUpdated}
+          />
         )}
 
         {latestLoading ? (
           <VideoGridSkeleton title="Latest" />
         ) : (
-          <VideoGrid videos={latest ?? []} title="Latest" />
+          <VideoGrid
+            videos={latest ?? []}
+            title="Latest"
+            adminEditable
+            onVideoUpdated={handleVideoUpdated}
+          />
         )}
       </div>
     </PageLayout>

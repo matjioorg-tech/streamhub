@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/api';
-import type { CreateB2StorageKeyInput, UpdateB2StorageKeyInput } from '@/lib/api/types';
+import type { CreateB2StorageKeyInput, UpdateB2StorageKeyInput, UpdateVideoInput } from '@/lib/api/types';
 
 export function useAdminDashboard() {
   return useQuery({
@@ -22,6 +22,31 @@ export function useAdminVideos() {
   return useQuery({
     queryKey: ['admin', 'videos'],
     queryFn: () => adminApi.videos(),
+  });
+}
+
+export function useUpdateVideo() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateVideoInput }) =>
+      adminApi.updateVideo(id, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'videos'] });
+      queryClient.invalidateQueries({ queryKey: ['videos'] });
+      queryClient.invalidateQueries({ queryKey: ['video'] });
+    },
+  });
+}
+
+export function useRegenerateVideoMetadata() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => adminApi.regenerateVideoMetadata(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'videos'] });
+      queryClient.invalidateQueries({ queryKey: ['videos'] });
+      queryClient.invalidateQueries({ queryKey: ['video'] });
+    },
   });
 }
 

@@ -47,6 +47,7 @@ export interface Video {
   likes: number;
   publishedAt: string | null;
   createdAt: string;
+  categoryId?: string | null;
   subCategory: string | null;
   contentType: string | null;
   language: string | null;
@@ -54,6 +55,35 @@ export interface Video {
   keywords: string[] | null;
   category?: Category | null;
   videoTags?: { tag: Tag }[];
+}
+
+export interface UpdateVideoInput {
+  title?: string;
+  description?: string;
+  summary?: string;
+  subCategory?: string;
+  contentType?: string;
+  language?: string;
+  ageRating?: string;
+  visibility?: string;
+  categoryId?: string;
+  slug?: string;
+  keywords?: string[];
+  tags?: string[];
+}
+
+export interface GeneratedVideoMetadata {
+  title: string;
+  description: string;
+  category: string;
+  subCategory: string;
+  contentType: string;
+  language: string;
+  ageRating: string;
+  tags: string[];
+  keywords: string[];
+  slug: string;
+  summary: string;
 }
 
 export interface Tag {
