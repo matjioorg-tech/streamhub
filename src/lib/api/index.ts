@@ -8,6 +8,7 @@ import type {
   UploadTask,
   B2StorageKey,
   CreateB2StorageKeyInput,
+  UpdateB2StorageKeyInput,
   AdminInvitation,
   InvitationPreview,
   StorageObjectsResponse,
@@ -166,9 +167,17 @@ export const adminApi = {
     return unwrap(response);
   },
 
+  testStorageKeyById: async (
+    id: string,
+    input: UpdateB2StorageKeyInput,
+  ): Promise<{ ok: boolean }> => {
+    const response = await apiClient.post(`/admin/storage-keys/${id}/test`, input);
+    return unwrap(response);
+  },
+
   updateStorageKey: async (
     id: string,
-    data: Partial<Pick<B2StorageKey, 'name' | 'priority' | 'isActive'>>,
+    data: UpdateB2StorageKeyInput,
   ): Promise<B2StorageKey> => {
     const response = await apiClient.patch(`/admin/storage-keys/${id}`, data);
     return unwrap(response);

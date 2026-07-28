@@ -131,6 +131,20 @@ export interface CreateB2StorageKeyInput {
   quotaBytes?: number;
 }
 
+export interface UpdateB2StorageKeyInput {
+  name?: string;
+  endpoint?: string;
+  region?: string;
+  bucket?: string;
+  bucketId?: string;
+  accessKey?: string;
+  secretKey?: string;
+  publicUrl?: string;
+  priority?: number;
+  quotaBytes?: number;
+  isActive?: boolean;
+}
+
 export interface AdminInvitation {
   id: string;
   email: string;

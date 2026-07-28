@@ -11,6 +11,7 @@ import {
 } from '@/hooks/use-admin';
 import type { CreateB2StorageKeyInput, B2StorageKey } from '@/lib/api/types';
 import { StorageDataModal } from '@/components/admin/storage-data-modal';
+import { StorageKeyEditModal } from '@/components/admin/storage-key-edit-modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { formatBytes } from '@/lib/utils';
 
@@ -24,7 +25,6 @@ const emptyForm: CreateB2StorageKeyInput = {
   accessKey: '',
   secretKey: '',
   publicUrl: '',
-  priority: 0,
 };
 
 export default function AdminStorageKeysPage() {
@@ -41,6 +41,7 @@ export default function AdminStorageKeysPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewingKey, setViewingKey] = useState<B2StorageKey | null>(null);
+  const [editingKey, setEditingKey] = useState<B2StorageKey | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<{
     id: string;
     name: string;
@@ -124,7 +125,7 @@ export default function AdminStorageKeysPage() {
         <div>
           <h1 className="text-2xl font-bold">Backblaze Storage Keys</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Each key has a 9.5 GB quota. When full, uploads automatically use the next key.
+            Each key has a 9.5 GB quota. Priority is auto-assigned — buckets with the most free space are used first.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -173,16 +174,6 @@ export default function AdminStorageKeysPage() {
                 value={form.name}
                 onChange={(e) => updateField('name', e.target.value)}
                 placeholder="B2 Key #2"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block text-zinc-400">Priority (lower = first)</span>
-              <input
-                type="number"
-                min={0}
-                value={form.priority ?? 0}
-                onChange={(e) => updateField('priority', parseInt(e.target.value, 10) || 0)}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2"
               />
             </label>
@@ -312,7 +303,7 @@ export default function AdminStorageKeysPage() {
                     {key.isWritable ? 'Writable' : 'Full'}
                   </span>
                   <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
-                    Priority {key.priority}
+                    Priority {key.priority} (auto)
                   </span>
                 </div>
               </div>
@@ -345,6 +336,13 @@ export default function AdminStorageKeysPage() {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  onClick={() => setEditingKey(key)}
+                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs hover:bg-zinc-800"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
                   onClick={() => setViewingKey(key)}
                   className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs hover:bg-zinc-800"
                 >
@@ -372,6 +370,17 @@ export default function AdminStorageKeysPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {editingKey && (
+        <StorageKeyEditModal
+          storageKey={editingKey}
+          onClose={() => setEditingKey(null)}
+          onSaved={() => {
+            setMessage(`"${editingKey.name}" updated.`);
+            refetch();
+          }}
+        />
       )}
 
       {viewingKey && (

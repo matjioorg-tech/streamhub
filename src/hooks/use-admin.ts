@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/api';
-import type { CreateB2StorageKeyInput } from '@/lib/api/types';
+import type { CreateB2StorageKeyInput, UpdateB2StorageKeyInput } from '@/lib/api/types';
 
 export function useAdminDashboard() {
   return useQuery({
@@ -49,9 +49,27 @@ export function useCreateStorageKey() {
   });
 }
 
+export function useUpdateStorageKey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateB2StorageKeyInput }) =>
+      adminApi.updateStorageKey(id, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'storage-keys'] });
+    },
+  });
+}
+
 export function useTestStorageKey() {
   return useMutation({
     mutationFn: (input: CreateB2StorageKeyInput) => adminApi.testStorageKey(input),
+  });
+}
+
+export function useTestStorageKeyById() {
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateB2StorageKeyInput }) =>
+      adminApi.testStorageKeyById(id, input),
   });
 }
 
