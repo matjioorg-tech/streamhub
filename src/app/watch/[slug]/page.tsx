@@ -116,8 +116,11 @@ export default function WatchPage({
             </div>
           )}
 
-          <p className="hidden text-center text-xs text-zinc-600 sm:block md:text-left">
-            Double-tap left/right to skip 10s · Tap center to play · Gear icon for quality
+          <p className="text-center text-xs text-zinc-500 sm:text-left md:text-zinc-600">
+            <span className="sm:hidden">Double-tap sides to skip · Hold & slide for speed</span>
+            <span className="hidden sm:inline">
+              Double-tap left/right to skip 10s · Hold & slide ← slower / faster → for speed · Gear icon for quality
+            </span>
           </p>
         </div>
       </div>

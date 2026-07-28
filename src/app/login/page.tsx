@@ -4,7 +4,7 @@ import { LoginForm } from '@/components/auth/login-form';
 
 export default function LoginPage() {
   return (
-    <PageLayout>
+    <PageLayout hideMobileNav>
       <div className="mx-auto max-w-md">
         <h1 className="mb-6 text-2xl font-bold">Sign In</h1>
         <LoginForm />

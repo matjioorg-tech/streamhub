@@ -59,7 +59,7 @@ export function VideoCard({ video, adminEditable = false, onVideoUpdated }: Vide
         <div className="absolute right-2 top-2 z-10">
           <AdminVideoEditButton
             video={video}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-700/80 bg-black/75 px-2 py-1 text-[11px] font-medium text-white backdrop-blur-sm hover:border-red-500/50"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-zinc-700/80 bg-black/75 px-3 py-2 text-xs font-medium text-white backdrop-blur-sm hover:border-red-500/50"
             onUpdated={onVideoUpdated}
           />
         </div>

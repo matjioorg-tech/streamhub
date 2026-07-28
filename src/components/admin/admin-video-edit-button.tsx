@@ -35,7 +35,7 @@ export function AdminVideoEditButton({
         }}
         className={
           className ??
-          'inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:border-red-500/50 hover:text-white'
+          'inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:border-red-500/50 hover:text-white'
         }
         aria-label={`Edit ${video.title}`}
       >

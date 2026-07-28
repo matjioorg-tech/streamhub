@@ -13,14 +13,14 @@ export default function CategoriesPage() {
       {isLoading ? (
         <div className="text-zinc-400">Loading...</div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {(categories ?? []).map((cat) => (
             <Link
               key={cat.id}
               href={`/categories/${cat.slug}`}
-              className="rounded-lg border border-zinc-800 bg-zinc-900 p-6 text-center transition hover:border-red-500"
+              className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-center transition hover:border-red-500 sm:p-6"
             >
-              <h3 className="font-medium text-white">{cat.name}</h3>
+              <h3 className="line-clamp-2 font-medium text-white">{cat.name}</h3>
             </Link>
           ))}
         </div>

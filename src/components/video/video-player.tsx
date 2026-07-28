@@ -20,6 +20,18 @@ import { cn, formatDuration } from '@/lib/utils';
 const SEEK_SECONDS = 10;
 const DOUBLE_TAP_MS = 320;
 const CONTROLS_HIDE_MS = 3500;
+const SPEED_MIN = 0.25;
+const SPEED_MAX = 2;
+const SPEED_DEFAULT = 1;
+const SPEED_PX_PER_STEP = 40;
+const SPEED_HOLD_MS = 280;
+const SPEED_ACTIVATION_PX = 14;
+
+function formatPlaybackRate(rate: number): string {
+  if (Math.abs(rate - 1) < 0.01) return '1x';
+  const rounded = Math.round(rate * 100) / 100;
+  return `${rounded}x`;
+}
 
 type WebKitVideoElement = HTMLVideoElement & {
   webkitEnterFullscreen?: () => void;
@@ -50,6 +62,16 @@ export function VideoPlayer({
     null,
   );
   const seekHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speedOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speedGestureRef = useRef({
+    pointerId: -1,
+    startX: 0,
+    startY: 0,
+    startRate: SPEED_DEFAULT,
+    active: false,
+    holdTimer: null as ReturnType<typeof setTimeout> | null,
+  });
+  const isSpeedGesturingRef = useRef(false);
 
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -62,10 +84,13 @@ export function VideoPlayer({
   const [seekHint, setSeekHint] = useState<'back' | 'forward' | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
   const pendingPlayRef = useRef(false);
   const isScrubbingRef = useRef(false);
   const [selectedQuality, setSelectedQuality] = useState<string>('auto');
   const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(SPEED_DEFAULT);
+  const [showSpeedOverlay, setShowSpeedOverlay] = useState(false);
 
   const qualityOptions: VideoQualityOption[] = useMemo(() => {
     if (video.qualities?.length) {
@@ -101,8 +126,6 @@ export function VideoPlayer({
     return selectedQuality;
   }, [qualityOptions, selectedQuality]);
 
-  const sourceMimeType = video.mimeType ?? 'video/mp4';
-
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
@@ -130,34 +153,176 @@ export function VideoPlayer({
     seekHintTimerRef.current = setTimeout(() => setSeekHint(null), 700);
   }, []);
 
+  const applyPlaybackRate = useCallback((rate: number) => {
+    const el = videoRef.current;
+    const clamped =
+      Math.round(Math.max(SPEED_MIN, Math.min(SPEED_MAX, rate)) * 100) / 100;
+    if (el) el.playbackRate = clamped;
+    setPlaybackRate(clamped);
+  }, []);
+
+  const showSpeedFeedback = useCallback(() => {
+    setShowSpeedOverlay(true);
+    if (speedOverlayTimerRef.current) clearTimeout(speedOverlayTimerRef.current);
+    speedOverlayTimerRef.current = setTimeout(() => setShowSpeedOverlay(false), 1500);
+  }, []);
+
+  const activateSpeedGesture = useCallback(
+    (clientX: number) => {
+      const g = speedGestureRef.current;
+      g.active = true;
+      g.startX = clientX;
+      g.startRate = playbackRate;
+      isSpeedGesturingRef.current = true;
+      setShowSpeedOverlay(true);
+      clearHideTimer();
+      setShowControls(true);
+    },
+    [playbackRate, clearHideTimer],
+  );
+
+  const updateSpeedFromPointer = useCallback(
+    (clientX: number) => {
+      const g = speedGestureRef.current;
+      if (!g.active) return;
+      const deltaX = clientX - g.startX;
+      const deltaRate = (deltaX / SPEED_PX_PER_STEP) * 0.25;
+      applyPlaybackRate(g.startRate + deltaRate);
+    },
+    [applyPlaybackRate],
+  );
+
+  const endSpeedGesture = useCallback(() => {
+    const g = speedGestureRef.current;
+    if (g.holdTimer) {
+      clearTimeout(g.holdTimer);
+      g.holdTimer = null;
+    }
+    const wasActive = g.active;
+    g.active = false;
+    g.pointerId = -1;
+    if (wasActive) {
+      showSpeedFeedback();
+      if (playing) scheduleHideControls();
+    }
+    setTimeout(() => {
+      isSpeedGesturingRef.current = false;
+    }, 50);
+  }, [showSpeedFeedback, playing, scheduleHideControls]);
+
+  const handleSpeedPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (isScrubbingRef.current) return;
+
+      const g = speedGestureRef.current;
+      g.pointerId = e.pointerId;
+      g.startX = e.clientX;
+      g.startY = e.clientY;
+      g.startRate = playbackRate;
+      g.active = false;
+
+      if (g.holdTimer) clearTimeout(g.holdTimer);
+      g.holdTimer = setTimeout(() => {
+        if (g.pointerId === e.pointerId && !isScrubbingRef.current) {
+          activateSpeedGesture(g.startX);
+          containerRef.current?.setPointerCapture(e.pointerId);
+        }
+      }, SPEED_HOLD_MS);
+    },
+    [playbackRate, activateSpeedGesture],
+  );
+
+  const handleSpeedPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const g = speedGestureRef.current;
+      if (g.pointerId !== e.pointerId) return;
+
+      const deltaX = e.clientX - g.startX;
+      const deltaY = e.clientY - g.startY;
+
+      if (!g.active) {
+        if (
+          Math.abs(deltaX) > SPEED_ACTIVATION_PX &&
+          Math.abs(deltaX) > Math.abs(deltaY)
+        ) {
+          if (g.holdTimer) {
+            clearTimeout(g.holdTimer);
+            g.holdTimer = null;
+          }
+          activateSpeedGesture(g.startX);
+          containerRef.current?.setPointerCapture(e.pointerId);
+        }
+        return;
+      }
+
+      e.preventDefault();
+      updateSpeedFromPointer(e.clientX);
+    },
+    [activateSpeedGesture, updateSpeedFromPointer],
+  );
+
+  const handleSpeedPointerEnd = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const g = speedGestureRef.current;
+      if (g.pointerId !== e.pointerId) return;
+
+      const wasActive = g.active;
+      if (g.holdTimer) {
+        clearTimeout(g.holdTimer);
+        g.holdTimer = null;
+      }
+
+      endSpeedGesture();
+
+      try {
+        containerRef.current?.releasePointerCapture(e.pointerId);
+      } catch {
+        // Pointer may not be captured
+      }
+
+      return wasActive;
+    },
+    [endSpeedGesture],
+  );
+
   const attemptPlay = useCallback(async () => {
     const el = videoRef.current;
     if (!el) return;
 
     setPlaybackError(null);
-
-    if (el.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-      pendingPlayRef.current = true;
-      setIsBuffering(true);
-      return;
-    }
+    setIsStarting(true);
 
     try {
       await el.play();
       pendingPlayRef.current = false;
       setIsBuffering(false);
+      setIsStarting(false);
     } catch (err) {
       const domError = err as DOMException;
       if (domError.name === 'AbortError') {
         return;
       }
-      if (el.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-        pendingPlayRef.current = true;
-        setIsBuffering(true);
-        return;
-      }
-      setIsBuffering(false);
-      setPlaybackError('Tap play to start playback');
+
+      // Not enough data yet — wait for the browser to buffer, then retry.
+      pendingPlayRef.current = true;
+      setIsBuffering(true);
+
+      const retry = () => {
+        if (!pendingPlayRef.current) return;
+        void el.play()
+          .then(() => {
+            pendingPlayRef.current = false;
+            setIsBuffering(false);
+            setIsStarting(false);
+          })
+          .catch(() => {
+            // Still loading — onCanPlay / onPlaying will retry again.
+          });
+      };
+
+      el.addEventListener('canplay', retry, { once: true });
+      el.addEventListener('loadeddata', retry, { once: true });
     }
   }, []);
 
@@ -355,6 +520,9 @@ export function VideoPlayer({
     return () => {
       clearHideTimer();
       if (seekHintTimerRef.current) clearTimeout(seekHintTimerRef.current);
+      if (speedOverlayTimerRef.current) clearTimeout(speedOverlayTimerRef.current);
+      const g = speedGestureRef.current;
+      if (g.holdTimer) clearTimeout(g.holdTimer);
     };
   }, [clearHideTimer]);
 
@@ -370,7 +538,29 @@ export function VideoPlayer({
     pendingPlayRef.current = false;
     setPlaybackError(null);
     setIsBuffering(false);
-  }, [activeSourceUrl]);
+    setIsStarting(false);
+    applyPlaybackRate(SPEED_DEFAULT);
+    setShowSpeedOverlay(false);
+  }, [activeSourceUrl, applyPlaybackRate]);
+
+  // Clear stuck loading state if playback never starts.
+  useEffect(() => {
+    if (!isStarting && !isBuffering) return;
+
+    const timeout = setTimeout(() => {
+      const el = videoRef.current;
+      if (!el) return;
+      if (!pendingPlayRef.current && el.paused) return;
+      pendingPlayRef.current = false;
+      setIsBuffering(false);
+      setIsStarting(false);
+      if (el.paused) {
+        setPlaybackError('Tap play to start playback');
+      }
+    }, 12000);
+
+    return () => clearTimeout(timeout);
+  }, [isStarting, isBuffering, activeSourceUrl]);
 
   if (!activeSourceUrl) {
     return (
@@ -392,10 +582,17 @@ export function VideoPlayer({
         'rounded-none sm:rounded-xl',
         isFullscreen && 'max-h-none rounded-none',
       )}
+      onPointerDown={handleSpeedPointerDown}
+      onPointerMove={handleSpeedPointerMove}
       onPointerUp={(e) => {
         if (isScrubbingRef.current) return;
         if (e.pointerType === 'mouse' && e.button !== 0) return;
+        const wasSpeedGesture = handleSpeedPointerEnd(e);
+        if (wasSpeedGesture || isSpeedGesturingRef.current) return;
         handleTap(e.clientX);
+      }}
+      onPointerCancel={(e) => {
+        handleSpeedPointerEnd(e);
       }}
       onDoubleClick={(e) => {
         e.preventDefault();
@@ -414,31 +611,39 @@ export function VideoPlayer({
       <video
         ref={videoRef}
         key={activeSourceUrl}
+        src={activeSourceUrl}
         className="h-full w-full object-contain"
         playsInline
         webkit-playsinline="true"
         x5-playsinline="true"
-        preload="metadata"
+        preload="auto"
         poster={video.posterUrl ?? video.thumbnailUrl ?? undefined}
         onPlay={() => {
           setPlaying(true);
           setIsBuffering(false);
+          setIsStarting(false);
           setPlaybackError(null);
+          pendingPlayRef.current = false;
         }}
         onPause={() => setPlaying(false)}
-        onLoadedData={() => {
-          if (pendingPlayRef.current) {
-            void attemptPlay();
-          }
-        }}
         onCanPlay={() => {
           if (pendingPlayRef.current) {
             void attemptPlay();
           }
         }}
-        onWaiting={() => setIsBuffering(true)}
+        onCanPlayThrough={() => {
+          if (pendingPlayRef.current) {
+            void attemptPlay();
+          }
+        }}
+        onWaiting={() => {
+          if (!videoRef.current?.paused) {
+            setIsBuffering(true);
+          }
+        }}
         onPlaying={() => {
           setIsBuffering(false);
+          setIsStarting(false);
           pendingPlayRef.current = false;
         }}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
@@ -456,15 +661,14 @@ export function VideoPlayer({
         }}
         onError={() => {
           setIsBuffering(false);
+          setIsStarting(false);
           pendingPlayRef.current = false;
           setPlaybackError('Unable to play this video. Check your connection and try again.');
         }}
-      >
-        <source src={activeSourceUrl} type={sourceMimeType} />
-      </video>
+      />
 
-      {isBuffering && !playbackError && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/50">
+      {(isStarting || isBuffering) && !playbackError && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/50">
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/30 border-t-white" />
           <p className="text-xs text-zinc-300">Loading video...</p>
         </div>
@@ -489,8 +693,21 @@ export function VideoPlayer({
       )}
 
       {qualityOptions.length > 1 && (
-        <div className="pointer-events-none absolute right-3 top-3 rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur-sm sm:text-xs">
-          {activeQualityLabel}
+        <div className="pointer-events-none absolute right-3 top-3 flex flex-col items-end gap-1">
+          <div className="rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur-sm sm:text-xs">
+            {activeQualityLabel}
+          </div>
+          {Math.abs(playbackRate - SPEED_DEFAULT) > 0.01 && (
+            <div className="rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-medium text-amber-300 backdrop-blur-sm sm:text-xs">
+              {formatPlaybackRate(playbackRate)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {qualityOptions.length <= 1 && Math.abs(playbackRate - SPEED_DEFAULT) > 0.01 && (
+        <div className="pointer-events-none absolute right-3 top-3 rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-medium text-amber-300 backdrop-blur-sm sm:text-xs">
+          {formatPlaybackRate(playbackRate)}
         </div>
       )}
 
@@ -519,14 +736,25 @@ export function VideoPlayer({
         </div>
       )}
 
-      {!playing && !playbackError && !isBuffering && (
+      {showSpeedOverlay && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+          <div className="rounded-2xl bg-black/75 px-6 py-4 text-center backdrop-blur-sm">
+            <p className="text-3xl font-bold tabular-nums text-white">
+              {formatPlaybackRate(playbackRate)}
+            </p>
+            <p className="mt-1.5 text-xs text-zinc-400">← slower · faster →</p>
+          </div>
+        </div>
+      )}
+
+      {!playing && !playbackError && (
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             togglePlay();
           }}
-          className="absolute left-1/2 top-1/2 z-10 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-red-600/95 text-white shadow-lg shadow-red-900/40 transition-transform active:scale-95 sm:h-20 sm:w-20"
+          className="absolute left-1/2 top-1/2 z-30 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-red-600/95 text-white shadow-lg shadow-red-900/40 transition-transform active:scale-95 sm:h-20 sm:w-20"
           aria-label="Play"
         >
           <Play className="ml-0.5 h-7 w-7 fill-current sm:ml-1 sm:h-10 sm:w-10" />
@@ -575,24 +803,24 @@ export function VideoPlayer({
           </div>
         </div>
 
-        <div className="flex items-center gap-1 sm:gap-3">
+        <div className="flex min-w-0 items-center gap-0.5 sm:gap-3">
           <button
             type="button"
             onClick={togglePlay}
-            className="rounded-full p-2.5 text-white active:bg-white/20 sm:p-2 sm:hover:bg-white/10"
+            className="shrink-0 rounded-full p-2.5 text-white active:bg-white/20 sm:p-2 sm:hover:bg-white/10"
             aria-label={playing ? 'Pause' : 'Play'}
           >
             {playing ? (
-              <Pause className="h-6 w-6 sm:h-6 sm:w-6" />
+              <Pause className="h-6 w-6" />
             ) : (
-              <Play className="h-6 w-6 fill-current sm:h-6 sm:w-6" />
+              <Play className="h-6 w-6 fill-current" />
             )}
           </button>
 
           <button
             type="button"
             onClick={() => seekRelative(-SEEK_SECONDS)}
-            className="rounded-full p-2.5 text-white active:bg-white/20 sm:hidden"
+            className="hidden shrink-0 rounded-full p-2 text-white hover:bg-white/10 sm:block"
             aria-label={`Rewind ${SEEK_SECONDS} seconds`}
           >
             <SkipBack className="h-5 w-5" />
@@ -601,25 +829,7 @@ export function VideoPlayer({
           <button
             type="button"
             onClick={() => seekRelative(SEEK_SECONDS)}
-            className="rounded-full p-2.5 text-white active:bg-white/20 sm:hidden"
-            aria-label={`Forward ${SEEK_SECONDS} seconds`}
-          >
-            <SkipForward className="h-5 w-5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => seekRelative(-SEEK_SECONDS)}
-            className="hidden rounded-full p-2 text-white hover:bg-white/10 sm:block"
-            aria-label={`Rewind ${SEEK_SECONDS} seconds`}
-          >
-            <SkipBack className="h-5 w-5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => seekRelative(SEEK_SECONDS)}
-            className="hidden rounded-full p-2 text-white hover:bg-white/10 sm:block"
+            className="hidden shrink-0 rounded-full p-2 text-white hover:bg-white/10 sm:block"
             aria-label={`Forward ${SEEK_SECONDS} seconds`}
           >
             <SkipForward className="h-5 w-5" />
@@ -633,7 +843,7 @@ export function VideoPlayer({
               el.muted = !el.muted;
               setMuted(el.muted);
             }}
-            className="rounded-full p-2.5 text-white active:bg-white/20 sm:p-2 sm:hover:bg-white/10"
+            className="shrink-0 rounded-full p-2.5 text-white active:bg-white/20 sm:p-2 sm:hover:bg-white/10"
             aria-label={muted ? 'Unmute' : 'Mute'}
           >
             {muted || volume === 0 ? (
@@ -658,16 +868,16 @@ export function VideoPlayer({
               setVolume(v);
               setMuted(v === 0);
             }}
-            className="hidden h-1 w-20 accent-red-500 sm:block"
+            className="hidden h-1 w-20 shrink-0 accent-red-500 sm:block"
             aria-label="Volume"
           />
 
-          <span className="ml-auto text-[11px] tabular-nums text-white/90 sm:text-sm">
+          <span className="ml-auto min-w-0 shrink truncate text-xs tabular-nums text-white/90 sm:text-sm">
             {formatDuration(currentTime)} / {formatDuration(duration)}
           </span>
 
           {qualityOptions.length > 0 && (
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -678,7 +888,7 @@ export function VideoPlayer({
                 className="rounded-full p-2.5 text-white active:bg-white/20 sm:p-2 sm:hover:bg-white/10"
                 aria-label="Quality settings"
               >
-                <Settings className="h-5 w-5 sm:h-6 sm:w-6" />
+                <Settings className="h-5 w-5" />
               </button>
               {showQualityMenu && (
                 <div className="absolute bottom-full right-0 mb-2 max-h-[50vh] min-w-[140px] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900/95 py-1 shadow-xl backdrop-blur">
@@ -730,13 +940,13 @@ export function VideoPlayer({
           <button
             type="button"
             onClick={() => void toggleFullscreen()}
-            className="rounded-full p-2.5 text-white active:bg-white/20 sm:p-2 sm:hover:bg-white/10"
+            className="shrink-0 rounded-full p-2.5 text-white active:bg-white/20 sm:p-2 sm:hover:bg-white/10"
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           >
             {isFullscreen ? (
-              <Minimize className="h-5 w-5 sm:h-6 sm:w-6" />
+              <Minimize className="h-5 w-5" />
             ) : (
-              <Maximize className="h-5 w-5 sm:h-6 sm:w-6" />
+              <Maximize className="h-5 w-5" />
             )}
           </button>
         </div>

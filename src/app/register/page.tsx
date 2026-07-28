@@ -4,7 +4,7 @@ import { RegisterForm } from '@/components/auth/register-form';
 
 export default function RegisterPage() {
   return (
-    <PageLayout>
+    <PageLayout hideMobileNav>
       <div className="mx-auto max-w-md">
         <h1 className="mb-6 text-2xl font-bold">Create Account</h1>
         <RegisterForm />

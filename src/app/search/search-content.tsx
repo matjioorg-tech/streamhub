@@ -28,7 +28,7 @@ export function SearchContent() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search videos..."
-          className="w-full max-w-xl rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-white focus:border-red-500 focus:outline-none"
+          className="w-full max-w-xl rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-white focus:border-red-500 focus:outline-none"
         />
       </form>
       {isLoading ? (

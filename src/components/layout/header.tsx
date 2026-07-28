@@ -18,7 +18,7 @@ export function Header() {
   return (
     <header
       className={cn(
-        'sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur',
+        'sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/90 pt-[env(safe-area-inset-top)] backdrop-blur',
         isWatchPage && 'border-b-zinc-800/80',
       )}
     >
@@ -50,21 +50,21 @@ export function Header() {
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
           <Link
             href="/search"
-            className="rounded-full p-2.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
             aria-label="Search"
           >
             <Search className="h-5 w-5" />
           </Link>
           <Link
             href="/admin/login"
-            className="hidden rounded-full p-2.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white sm:block"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
             aria-label="Admin"
           >
             <LayoutDashboard className="h-5 w-5" />
           </Link>
           <Link
             href="/profile"
-            className="rounded-full p-2.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
             aria-label="Profile"
           >
             <User className="h-5 w-5" />

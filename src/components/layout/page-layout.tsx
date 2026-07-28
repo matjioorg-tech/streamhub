@@ -9,12 +9,17 @@ import { cn } from '@/lib/utils';
 export function PageLayout({
   children,
   className,
+  hideMobileNav = false,
+  hideFooter = false,
 }: {
   children: React.ReactNode;
   className?: string;
+  hideMobileNav?: boolean;
+  hideFooter?: boolean;
 }) {
   const pathname = usePathname();
   const isWatchPage = pathname.startsWith('/watch/');
+  const showMobileNav = !hideMobileNav && !isWatchPage;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -22,14 +27,18 @@ export function PageLayout({
       <main
         className={cn(
           'mx-auto w-full max-w-7xl flex-1',
-          isWatchPage ? 'px-0 py-0 pb-4 md:px-6 md:py-6' : 'px-4 py-5 pb-24 md:px-6 md:py-6 md:pb-8',
+          isWatchPage
+            ? 'px-0 py-0 pb-4 md:px-6 md:py-6'
+            : showMobileNav
+              ? 'px-4 py-5 pb-24 md:px-6 md:py-6 md:pb-8'
+              : 'px-4 py-5 md:px-6 md:py-6',
           className,
         )}
       >
         {children}
       </main>
-      <Footer />
-      {!isWatchPage && <MobileNav />}
+      {!hideFooter && <Footer compact={showMobileNav} />}
+      {showMobileNav && <MobileNav />}
     </div>
   );
 }

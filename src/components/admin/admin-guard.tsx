@@ -3,13 +3,13 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { Menu, X } from 'lucide-react';
 import { authApi } from '@/lib/api';
 import {
   clearSession,
   getAccessToken,
   getStoredUser,
   isAdminUser,
-  setSession,
   storeUser,
 } from '@/lib/auth/session';
 import { cn } from '@/lib/utils';
@@ -27,6 +27,18 @@ function AdminNav() {
   const pathname = usePathname();
   const router = useRouter();
   const user = getStoredUser();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [menuOpen]);
 
   const handleLogout = async () => {
     try {
@@ -39,12 +51,13 @@ function AdminNav() {
   };
 
   return (
-    <header className="border-b border-zinc-800 bg-zinc-950">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-4 px-4 py-4">
-        <Link href="/admin" className="text-lg font-bold text-red-500">
+    <header className="sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950 pt-[env(safe-area-inset-top)]">
+      <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 md:py-4">
+        <Link href="/admin" className="shrink-0 text-lg font-bold text-red-500">
           StreamHub Admin
         </Link>
-        <nav className="flex flex-wrap items-center gap-1">
+
+        <nav className="hidden items-center gap-1 md:flex">
           {navLinks.map(({ href, label, exact }) => {
             const active = exact ? pathname === href : pathname.startsWith(href);
             return (
@@ -63,19 +76,69 @@ function AdminNav() {
             );
           })}
         </nav>
-        <div className="ml-auto flex items-center gap-3">
+
+        <div className="ml-auto flex items-center gap-2">
           {user && (
-            <span className="hidden text-sm text-zinc-500 sm:inline">{user.email}</span>
+            <span className="hidden max-w-[140px] truncate text-sm text-zinc-500 lg:inline">
+              {user.email}
+            </span>
           )}
           <button
             type="button"
             onClick={handleLogout}
-            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
+            className="hidden rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 md:block"
           >
             Logout
           </button>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-zinc-300 hover:bg-zinc-800 md:hidden"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+          >
+            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
       </div>
+
+      {menuOpen && (
+        <>
+          <div
+            className="fixed inset-0 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 bg-black/60 md:hidden"
+            onClick={() => setMenuOpen(false)}
+            aria-hidden
+          />
+          <nav className="relative z-50 border-t border-zinc-800 bg-zinc-950 px-4 py-3 md:hidden">
+            <div className="flex flex-col gap-1">
+              {navLinks.map(({ href, label, exact }) => {
+                const active = exact ? pathname === href : pathname.startsWith(href);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={cn(
+                      'rounded-lg px-4 py-3 text-sm font-medium transition-colors',
+                      active
+                        ? 'bg-zinc-800 text-white'
+                        : 'text-zinc-300 hover:bg-zinc-800/60',
+                    )}
+                  >
+                    {label}
+                  </Link>
+                );
+              })}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="mt-2 rounded-lg border border-zinc-700 px-4 py-3 text-left text-sm text-zinc-300 hover:bg-zinc-800"
+              >
+                Logout
+              </button>
+            </div>
+          </nav>
+        </>
+      )}
     </header>
   );
 }
@@ -150,7 +213,9 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <AdminNav />
-      <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-5 pb-[env(safe-area-inset-bottom)] md:py-6">
+        {children}
+      </main>
     </div>
   );
 }

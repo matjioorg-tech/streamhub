@@ -47,7 +47,7 @@ export default function CategoryDetailPage() {
           <Link
             href={`/categories/${params.slug}`}
             className={cn(
-              'rounded-full border px-4 py-1.5 text-sm transition',
+              'rounded-full border px-4 py-2.5 text-sm transition',
               !selectedSub
                 ? 'border-red-500 bg-red-500/10 text-red-400'
                 : 'border-zinc-700 text-zinc-300 hover:border-zinc-500',
@@ -60,7 +60,7 @@ export default function CategoryDetailPage() {
               key={sub.slug}
               href={`/categories/${params.slug}?sub=${encodeURIComponent(sub.name)}`}
               className={cn(
-                'rounded-full border px-4 py-1.5 text-sm transition',
+                'rounded-full border px-4 py-2.5 text-sm transition',
                 selectedSub === sub.name
                   ? 'border-red-500 bg-red-500/10 text-red-400'
                   : 'border-zinc-700 text-zinc-300 hover:border-zinc-500',

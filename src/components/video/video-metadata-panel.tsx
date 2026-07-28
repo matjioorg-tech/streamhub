@@ -7,9 +7,9 @@ interface VideoMetadataPanelProps {
 
 function MetadataItem({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</dt>
-      <dd className="mt-0.5 text-sm text-zinc-200">{value}</dd>
+      <dd className="mt-0.5 break-words text-sm text-zinc-200">{value}</dd>
     </div>
   );
 }
@@ -52,7 +52,7 @@ export function VideoMetadataPanel({ video }: VideoMetadataPanelProps) {
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
             Description
           </h2>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-300 sm:text-base">
+          <p className="break-words whitespace-pre-wrap text-sm leading-relaxed text-zinc-300 sm:text-base">
             {video.description}
           </p>
         </div>

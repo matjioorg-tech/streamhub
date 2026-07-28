@@ -5,6 +5,7 @@ import { useAdminVideos } from '@/hooks/use-admin';
 import { adminApi } from '@/lib/api';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AdminVideoEditButton } from '@/components/admin/admin-video-edit-button';
+import { cn } from '@/lib/utils';
 
 type DeleteRequest =
   | { type: 'one'; id: string; title: string }
@@ -126,86 +127,157 @@ export default function AdminVideosPage() {
       {isLoading ? (
         <div className="text-zinc-400">Loading...</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-zinc-800">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-zinc-800 bg-zinc-900 text-zinc-400">
-              <tr>
-                <th className="w-10 p-3">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleAll}
-                    aria-label="Select all videos"
-                    className="h-4 w-4 rounded border-zinc-600 bg-zinc-950 accent-red-600"
-                  />
-                </th>
-                <th className="p-3">Title</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Views</th>
-                <th className="p-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {videoList.map((video) => (
-                <tr
-                  key={video.id}
-                  className={`border-b border-zinc-800 ${
-                    selectedIds.has(video.id) ? 'bg-zinc-900/60' : ''
-                  }`}
-                >
-                  <td className="p-3">
+        <>
+          {/* Mobile card layout */}
+          <div className="space-y-3 md:hidden">
+            {videoList.map((video) => (
+              <div
+                key={video.id}
+                className={cn(
+                  'rounded-xl border border-zinc-800 bg-zinc-900/50 p-4',
+                  selectedIds.has(video.id) && 'ring-1 ring-red-500/50',
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <label className="flex shrink-0 cursor-pointer items-center p-1">
                     <input
                       type="checkbox"
                       checked={selectedIds.has(video.id)}
                       onChange={() => toggleOne(video.id)}
                       aria-label={`Select ${video.title}`}
+                      className="h-5 w-5 rounded border-zinc-600 bg-zinc-950 accent-red-600"
+                    />
+                  </label>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium leading-snug text-white">{video.title}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                      <span className="rounded bg-zinc-800 px-2 py-0.5 text-xs">
+                        {video.status}
+                      </span>
+                      <span className="text-zinc-400">{video.views} views</span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <AdminVideoEditButton
+                        video={video}
+                        onUpdated={() => refetch()}
+                      />
+                      {video.status !== 'published' && (
+                        <button
+                          type="button"
+                          onClick={() => void adminApi.publish(video.id).then(() => refetch())}
+                          className="rounded-lg border border-green-800/50 bg-green-950/30 px-3 py-2 text-sm text-green-400"
+                        >
+                          Publish
+                        </button>
+                      )}
+                      {video.status === 'published' && (
+                        <button
+                          type="button"
+                          onClick={() => void adminApi.unpublish(video.id).then(() => refetch())}
+                          className="rounded-lg border border-yellow-800/50 bg-yellow-950/30 px-3 py-2 text-sm text-yellow-400"
+                        >
+                          Unpublish
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDeleteRequest({ type: 'one', id: video.id, title: video.title })
+                        }
+                        disabled={deleting}
+                        className="rounded-lg border border-red-900/50 bg-red-950/30 px-3 py-2 text-sm text-red-400 disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden overflow-x-auto rounded-xl border border-zinc-800 md:block">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-zinc-800 bg-zinc-900 text-zinc-400">
+                <tr>
+                  <th className="w-10 p-3">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      aria-label="Select all videos"
                       className="h-4 w-4 rounded border-zinc-600 bg-zinc-950 accent-red-600"
                     />
-                  </td>
-                  <td className="p-3 font-medium">{video.title}</td>
-                  <td className="p-3">
-                    <span className="rounded bg-zinc-800 px-2 py-1 text-xs">{video.status}</span>
-                  </td>
-                  <td className="p-3">{video.views}</td>
-                  <td className="space-x-2 p-3">
-                    <AdminVideoEditButton
-                      video={video}
-                      onUpdated={() => refetch()}
-                    />
-                    {video.status !== 'published' && (
-                      <button
-                        type="button"
-                        onClick={() => void adminApi.publish(video.id).then(() => refetch())}
-                        className="text-green-400 hover:underline"
-                      >
-                        Publish
-                      </button>
-                    )}
-                    {video.status === 'published' && (
-                      <button
-                        type="button"
-                        onClick={() => void adminApi.unpublish(video.id).then(() => refetch())}
-                        className="text-yellow-400 hover:underline"
-                      >
-                        Unpublish
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDeleteRequest({ type: 'one', id: video.id, title: video.title })
-                      }
-                      disabled={deleting}
-                      className="text-red-400 hover:underline disabled:opacity-50"
-                    >
-                      Delete
-                    </button>
-                  </td>
+                  </th>
+                  <th className="p-3">Title</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Views</th>
+                  <th className="p-3">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {videoList.map((video) => (
+                  <tr
+                    key={video.id}
+                    className={`border-b border-zinc-800 ${
+                      selectedIds.has(video.id) ? 'bg-zinc-900/60' : ''
+                    }`}
+                  >
+                    <td className="p-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(video.id)}
+                        onChange={() => toggleOne(video.id)}
+                        aria-label={`Select ${video.title}`}
+                        className="h-4 w-4 rounded border-zinc-600 bg-zinc-950 accent-red-600"
+                      />
+                    </td>
+                    <td className="max-w-[280px] truncate p-3 font-medium">{video.title}</td>
+                    <td className="p-3">
+                      <span className="rounded bg-zinc-800 px-2 py-1 text-xs">{video.status}</span>
+                    </td>
+                    <td className="p-3">{video.views}</td>
+                    <td className="space-x-2 p-3">
+                      <AdminVideoEditButton
+                        video={video}
+                        onUpdated={() => refetch()}
+                      />
+                      {video.status !== 'published' && (
+                        <button
+                          type="button"
+                          onClick={() => void adminApi.publish(video.id).then(() => refetch())}
+                          className="text-green-400 hover:underline"
+                        >
+                          Publish
+                        </button>
+                      )}
+                      {video.status === 'published' && (
+                        <button
+                          type="button"
+                          onClick={() => void adminApi.unpublish(video.id).then(() => refetch())}
+                          className="text-yellow-400 hover:underline"
+                        >
+                          Unpublish
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDeleteRequest({ type: 'one', id: video.id, title: video.title })
+                        }
+                        disabled={deleting}
+                        className="text-red-400 hover:underline disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {deleteDialog}
