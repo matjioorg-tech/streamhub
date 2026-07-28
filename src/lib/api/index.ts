@@ -3,6 +3,7 @@ import type {
   Video,
   PaginatedResponse,
   Category,
+  SubCategory,
   AuthResponse,
   DashboardStats,
   UploadTask,
@@ -23,6 +24,7 @@ export interface VideoQueryParams {
   limit?: number;
   search?: string;
   category?: string;
+  subCategory?: string;
   tag?: string;
   sortBy?: string;
   sortOrder?: 'ASC' | 'DESC';
@@ -58,6 +60,16 @@ export const videosApi = {
 export const categoriesApi = {
   list: async (): Promise<Category[]> => {
     const response = await apiClient.get('/categories');
+    return unwrap(response);
+  },
+
+  getBySlug: async (slug: string): Promise<Category> => {
+    const response = await apiClient.get(`/categories/${slug}`);
+    return unwrap(response);
+  },
+
+  listSubcategories: async (slug: string): Promise<SubCategory[]> => {
+    const response = await apiClient.get(`/categories/${slug}/subcategories`);
     return unwrap(response);
   },
 };

@@ -17,7 +17,7 @@ export default function CategoriesPage() {
           {(categories ?? []).map((cat) => (
             <Link
               key={cat.id}
-              href={`/search?category=${cat.id}`}
+              href={`/categories/${cat.slug}`}
               className="rounded-lg border border-zinc-800 bg-zinc-900 p-6 text-center transition hover:border-red-500"
             >
               <h3 className="font-medium text-white">{cat.name}</h3>

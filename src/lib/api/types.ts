@@ -62,6 +62,12 @@ export interface Category {
   description: string | null;
 }
 
+export interface SubCategory {
+  name: string;
+  slug: string;
+  videoCount: number;
+}
+
 export interface User {
   id: string;
   email: string;

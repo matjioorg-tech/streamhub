@@ -3,10 +3,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { videosApi, type VideoQueryParams } from '@/lib/api';
 
-export function useVideos(params?: VideoQueryParams) {
+export function useVideos(params?: VideoQueryParams, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['videos', params],
     queryFn: () => videosApi.list(params),
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -36,6 +37,6 @@ export function useSearchVideos(params: VideoQueryParams) {
   return useQuery({
     queryKey: ['search', params],
     queryFn: () => videosApi.search(params),
-    enabled: !!params.search,
+    enabled: !!(params.search || params.category || params.subCategory),
   });
 }

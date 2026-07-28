@@ -9,3 +9,19 @@ export function useCategories() {
     queryFn: () => categoriesApi.list(),
   });
 }
+
+export function useCategory(slug: string) {
+  return useQuery({
+    queryKey: ['categories', slug],
+    queryFn: () => categoriesApi.getBySlug(slug),
+    enabled: !!slug,
+  });
+}
+
+export function useSubcategories(categorySlug: string) {
+  return useQuery({
+    queryKey: ['categories', categorySlug, 'subcategories'],
+    queryFn: () => categoriesApi.listSubcategories(categorySlug),
+    enabled: !!categorySlug,
+  });
+}
