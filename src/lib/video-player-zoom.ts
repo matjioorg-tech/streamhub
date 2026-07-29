@@ -10,6 +10,32 @@ export interface VideoZoomTransform {
 
 export const DEFAULT_VIDEO_ZOOM: VideoZoomTransform = { scale: 1, x: 0, y: 0 };
 
+export interface VideoContentSize {
+  width: number;
+  height: number;
+}
+
+/** Visible video bounds when using object-contain inside a container. */
+export function computeContainedVideoSize(
+  containerWidth: number,
+  containerHeight: number,
+  videoWidth: number,
+  videoHeight: number,
+): VideoContentSize {
+  if (containerWidth <= 0 || containerHeight <= 0) {
+    return { width: 1, height: 1 };
+  }
+  if (!videoWidth || !videoHeight) {
+    return { width: containerWidth, height: containerHeight };
+  }
+
+  const fitScale = Math.min(containerWidth / videoWidth, containerHeight / videoHeight);
+  return {
+    width: videoWidth * fitScale,
+    height: videoHeight * fitScale,
+  };
+}
+
 interface TouchPoint {
   clientX: number;
   clientY: number;
@@ -123,19 +149,20 @@ export function reclampVideoZoom(
   return { scale: transform.scale, ...clamped };
 }
 
-/** Pinch zoom anchored to viewport center; pan only when already offset. */
+/** Pinch zoom anchored to the video content center. */
 export function applyPinchCenterZoom(
   startScale: number,
   nextScale: number,
   startX: number,
   startY: number,
-  containerWidth: number,
-  containerHeight: number,
+  contentWidth: number,
+  contentHeight: number,
 ): VideoZoomTransform {
   const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
   if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
 
-  if (Math.abs(startX) < 0.5 && Math.abs(startY) < 0.5) {
+  const hasPan = Math.abs(startX) > 0.5 || Math.abs(startY) > 0.5;
+  if (!hasPan) {
     return { scale, x: 0, y: 0 };
   }
 
@@ -144,8 +171,8 @@ export function applyPinchCenterZoom(
     scale,
     startX * ratio,
     startY * ratio,
-    containerWidth,
-    containerHeight,
+    contentWidth,
+    contentHeight,
   );
   return { scale, ...clamped };
 }

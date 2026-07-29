@@ -23,6 +23,7 @@ import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
 import {
   DEFAULT_VIDEO_ZOOM,
   applyPinchCenterZoom,
+  computeContainedVideoSize,
   formatZoomPercent,
   getTouchDistance,
   clampPan,
@@ -117,6 +118,21 @@ function getZoomViewportSize(container: HTMLElement): { width: number; height: n
     width: Math.max(1, rect.width),
     height: Math.max(1, rect.height),
   };
+}
+
+function getZoomContentSize(
+  container: HTMLElement,
+  videoEl: HTMLVideoElement | null,
+  fallbackWidth: number,
+  fallbackHeight: number,
+): { width: number; height: number } {
+  const viewport = getZoomViewportSize(container);
+  return computeContainedVideoSize(
+    viewport.width,
+    viewport.height,
+    videoEl?.videoWidth || fallbackWidth || 16,
+    videoEl?.videoHeight || fallbackHeight || 9,
+  );
 }
 
 function formatPlaybackRate(rate: number): string {
@@ -302,6 +318,8 @@ export function VideoPlayer({
   const [isPinching, setIsPinching] = useState(false);
   const [showZoomHint, setShowZoomHint] = useState(false);
   const [fsPortraitChromeBottom, setFsPortraitChromeBottom] = useState(0);
+  const [zoomContentSize, setZoomContentSize] = useState({ width: 0, height: 0 });
+  const zoomContentSizeRef = useRef({ width: 0, height: 0 });
 
   const qualityOptions: VideoQualityOption[] = useMemo(() => {
     if (video.qualities?.length) {
@@ -367,6 +385,19 @@ export function VideoPlayer({
     pinchGestureRef.current.startY = 0;
     pinchGestureRef.current.startScale = 1;
   }, []);
+
+  const syncZoomContentSize = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const next = getZoomContentSize(
+      container,
+      videoRef.current,
+      video.width ?? 16,
+      video.height ?? 9,
+    );
+    zoomContentSizeRef.current = next;
+    setZoomContentSize(next);
+  }, [video.height, video.width]);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
@@ -606,7 +637,9 @@ export function VideoPlayer({
       if (!container) return;
 
       const pinch = pinchGestureRef.current;
-      const { width, height } = getZoomViewportSize(container);
+      const { width, height } = zoomContentSizeRef.current.width
+        ? zoomContentSizeRef.current
+        : getZoomContentSize(container, videoRef.current, video.width ?? 16, video.height ?? 9);
 
       if (e.touches.length === 2 && pinch.active) {
         e.preventDefault();
@@ -678,7 +711,12 @@ export function VideoPlayer({
         setGestureActive(false);
 
         if (container) {
-          const { width, height } = getZoomViewportSize(container);
+          const { width, height } = getZoomContentSize(
+            container,
+            videoRef.current,
+            video.width ?? 16,
+            video.height ?? 9,
+          );
           applyVideoZoom(snapVideoZoom(videoZoomRef.current, width, height));
         } else {
           applyVideoZoom(snapVideoZoom(videoZoomRef.current, 1, 1));
@@ -693,7 +731,7 @@ export function VideoPlayer({
         pinch.panOriginY = videoZoomRef.current.y;
       }
     },
-    [applyVideoZoom, finishSpeedTouchSession, zoomEnabled],
+    [applyVideoZoom, finishSpeedTouchSession, video.height, video.width, zoomEnabled],
   );
 
   const handleGesturePointerDown = useCallback(
@@ -1395,6 +1433,7 @@ export function VideoPlayer({
       frame = requestAnimationFrame(() => {
         frame = requestAnimationFrame(() => {
           resetVideoZoom();
+          syncZoomContentSize();
           updateFsPortraitChromeInset();
         });
       });
@@ -1408,7 +1447,32 @@ export function VideoPlayer({
       window.removeEventListener('orientationchange', onViewportChange);
       window.visualViewport?.removeEventListener('resize', onViewportChange);
     };
-  }, [resetVideoZoom, updateFsPortraitChromeInset, zoomEnabled]);
+  }, [resetVideoZoom, syncZoomContentSize, updateFsPortraitChromeInset, zoomEnabled]);
+
+  useEffect(() => {
+    if (!zoomEnabled) {
+      zoomContentSizeRef.current = { width: 0, height: 0 };
+      setZoomContentSize({ width: 0, height: 0 });
+      return;
+    }
+
+    syncZoomContentSize();
+    const onLayout = () => syncZoomContentSize();
+
+    window.addEventListener('resize', onLayout);
+    window.addEventListener('orientationchange', onLayout);
+    window.visualViewport?.addEventListener('resize', onLayout);
+
+    const el = videoRef.current;
+    el?.addEventListener('loadedmetadata', onLayout);
+
+    return () => {
+      window.removeEventListener('resize', onLayout);
+      window.removeEventListener('orientationchange', onLayout);
+      window.visualViewport?.removeEventListener('resize', onLayout);
+      el?.removeEventListener('loadedmetadata', onLayout);
+    };
+  }, [activeSourceUrl, isFullscreen, pseudoFullscreen, syncZoomContentSize, zoomEnabled]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -1653,8 +1717,14 @@ export function VideoPlayer({
     >
       <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
         <div
-          className="h-full w-full will-change-transform"
+          className={cn(
+            'shrink-0 will-change-transform',
+            !(inFullscreen && zoomContentSize.width > 0) && 'h-full w-full',
+          )}
           style={{
+            ...(inFullscreen && zoomContentSize.width > 0
+              ? { width: zoomContentSize.width, height: zoomContentSize.height }
+              : undefined),
             transform: `translate3d(${videoZoom.x}px, ${videoZoom.y}px, 0) scale(${videoZoom.scale})`,
             transformOrigin: 'center center',
             transition: isPinching ? undefined : 'transform 0.18s ease-out',
@@ -1664,8 +1734,12 @@ export function VideoPlayer({
             ref={videoRef}
             src={activeSourceUrl}
             className={cn(
-              'pointer-events-none h-full w-full',
-              isFullscreen || pseudoFullscreen ? 'object-contain' : 'object-cover sm:object-contain',
+              'pointer-events-none block h-full w-full',
+              inFullscreen
+                ? zoomContentSize.width > 0
+                  ? undefined
+                  : 'object-contain'
+                : 'object-cover sm:object-contain',
             )}
             playsInline
             preload="auto"
