@@ -6,6 +6,32 @@ function hasPlaybackUrl(video: Video): boolean {
   return Boolean(video.cdnUrl || (video.qualities && video.qualities.length > 0));
 }
 
+/** Stable identity for signed stream URLs (ignore changing query params). */
+export function getStreamKey(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+let warmVideoEl: HTMLVideoElement | null = null;
+
+function getWarmVideoElement(): HTMLVideoElement | null {
+  if (typeof document === 'undefined') return null;
+  if (!warmVideoEl) {
+    warmVideoEl = document.createElement('video');
+    warmVideoEl.preload = 'auto';
+    warmVideoEl.muted = true;
+    warmVideoEl.playsInline = true;
+    warmVideoEl.setAttribute('playsinline', 'true');
+    warmVideoEl.style.cssText = 'position:fixed;width:0;height:0;opacity:0;pointer-events:none';
+    document.body.appendChild(warmVideoEl);
+  }
+  return warmVideoEl;
+}
+
 /** Reuse list/search cache so the watch page can render the player before the watch API returns. */
 export function findVideoInCache(queryClient: QueryClient, slug: string): Video | undefined {
   const listQueries = queryClient.getQueriesData<PaginatedResponse<Video>>({
@@ -54,13 +80,22 @@ export function prefetchVideoBySlug(queryClient: QueryClient, slug: string): voi
 export function primeVideoStream(url: string): void {
   if (!url || typeof document === 'undefined') return;
 
-  const existing = document.querySelector(`link[data-video-prime="${url}"]`);
+  const streamKey = getStreamKey(url);
+
+  const existing = document.querySelector(`link[data-video-prime="${streamKey}"]`);
   if (!existing) {
     const link = document.createElement('link');
     link.rel = 'preload';
     link.as = 'video';
     link.href = url;
-    link.setAttribute('data-video-prime', url);
+    link.setAttribute('data-video-prime', streamKey);
     document.head.appendChild(link);
+  }
+
+  const warm = getWarmVideoElement();
+  if (warm && warm.getAttribute('data-stream-key') !== streamKey) {
+    warm.src = url;
+    warm.setAttribute('data-stream-key', streamKey);
+    warm.load();
   }
 }

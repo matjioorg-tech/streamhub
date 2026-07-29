@@ -17,7 +17,7 @@ import {
 import type { Video, VideoQualityOption } from '@/lib/api/types';
 import { cn, formatDuration } from '@/lib/utils';
 import { pickAutoQualityOption } from '@/lib/video-quality';
-import { primeVideoStream } from '@/lib/video-cache';
+import { primeVideoStream, getStreamKey } from '@/lib/video-cache';
 import { takeVideoAutoplayIntent } from '@/lib/video-autoplay';
 import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
 import {
@@ -173,7 +173,7 @@ function isPortrait(): boolean {
   return window.matchMedia('(orientation: portrait)').matches;
 }
 
-function waitUntilCanPlay(el: HTMLVideoElement, timeoutMs = 20000): Promise<void> {
+function waitUntilCanPlay(el: HTMLVideoElement, timeoutMs = 8000): Promise<void> {
   if (el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
     return Promise.resolve();
   }
@@ -962,6 +962,17 @@ export function VideoPlayer({
     setIsBuffering(el.readyState < HTMLMediaElement.HAVE_FUTURE_DATA);
 
     try {
+      await el.play();
+      pendingPlayRef.current = false;
+      setIsBuffering(false);
+      setIsStarting(false);
+      return;
+    } catch (err) {
+      const domError = err as DOMException;
+      if (domError?.name === 'AbortError') return;
+    }
+
+    try {
       await waitUntilCanPlay(el);
       await el.play();
       pendingPlayRef.current = false;
@@ -1000,12 +1011,60 @@ export function VideoPlayer({
     autoplayPendingRef.current = autoPlay || takeVideoAutoplayIntent(video.slug);
   }, [autoPlay, video.slug]);
 
-  useEffect(() => {
-    if (!autoplayPendingRef.current || !activeSourceUrl) return;
+  useLayoutEffect(() => {
+    if (!activeSourceUrl) return;
+
+    primeVideoStream(activeSourceUrl);
+
+    const el = videoRef.current;
+    if (!el) return;
+
+    const streamKey = getStreamKey(activeSourceUrl);
+    const currentKey = el.src ? getStreamKey(el.src) : null;
+    const srcChanged = currentKey !== streamKey;
+    const shouldAutoplay = autoplayPendingRef.current;
+
+    el.preload = 'auto';
+
+    if (srcChanged) {
+      el.src = activeSourceUrl;
+    } else if (!shouldAutoplay) {
+      return;
+    }
+
+    if (!shouldAutoplay) {
+      if (srcChanged) {
+        const wasPlaying = !el.paused;
+        el.load();
+        if (wasPlaying) {
+          void el.play().catch(() => undefined);
+        }
+      }
+      return;
+    }
 
     autoplayPendingRef.current = false;
-    void attemptPlay();
-  }, [activeSourceUrl, attemptPlay, video.slug]);
+
+    if (srcChanged) {
+      el.load();
+    }
+
+    setPlaybackError(null);
+    setIsStarting(true);
+    setIsBuffering(true);
+    pendingPlayRef.current = true;
+
+    void el
+      .play()
+      .then(() => {
+        pendingPlayRef.current = false;
+        setIsBuffering(false);
+        setIsStarting(false);
+      })
+      .catch(() => {
+        void attemptPlay();
+      });
+  }, [activeSourceUrl, attemptPlay, autoPlay, video.slug]);
 
   const resumePlaybackIfNeeded = useCallback(() => {
     const el = videoRef.current;
@@ -1714,33 +1773,6 @@ export function VideoPlayer({
       if (zoomHintTimerRef.current) clearTimeout(zoomHintTimerRef.current);
     };
   }, []);
-
-  useEffect(() => {
-    pendingPlayRef.current = false;
-    setPlaybackError(null);
-    setIsBuffering(false);
-    setIsStarting(false);
-    flushPlaybackRate(SPEED_DEFAULT);
-    setShowSpeedOverlay(false);
-
-    if (!activeSourceUrl) return;
-
-    primeVideoStream(activeSourceUrl);
-
-    const el = videoRef.current;
-    if (!el) return;
-
-    const srcChanged = el.getAttribute('src') !== activeSourceUrl;
-    if (srcChanged) {
-      el.src = activeSourceUrl;
-    }
-
-    el.preload = 'auto';
-
-    if (srcChanged || el.readyState === HTMLMediaElement.HAVE_NOTHING) {
-      el.load();
-    }
-  }, [activeSourceUrl, flushPlaybackRate]);
 
   // Clear stuck loading state if playback never starts.
   useEffect(() => {

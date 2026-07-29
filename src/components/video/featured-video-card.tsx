@@ -2,21 +2,28 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
+import { useQueryClient } from '@tanstack/react-query';
 import { Play, Sparkles } from 'lucide-react';
 import type { Video } from '@/lib/api/types';
 import { formatDuration, formatUploadLabel, formatViews } from '@/lib/utils';
 import { markVideoAutoplayIntent } from '@/lib/video-autoplay';
+import { prefetchVideoBySlug } from '@/lib/video-cache';
 
 interface FeaturedVideoCardProps {
   video: Video;
 }
 
 export function FeaturedVideoCard({ video }: FeaturedVideoCardProps) {
+  const queryClient = useQueryClient();
+
   return (
     <Link
       href={`/watch/${video.slug}`}
       className="group relative block overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 ring-1 ring-zinc-800 transition-all hover:border-red-500/30 hover:ring-red-500/20"
-      onPointerDown={() => markVideoAutoplayIntent(video.slug)}
+      onPointerDown={() => {
+        markVideoAutoplayIntent(video.slug);
+        prefetchVideoBySlug(queryClient, video.slug);
+      }}
     >
       <div className="relative aspect-[16/10] sm:aspect-[21/9]">
         {video.thumbnailUrl ? (

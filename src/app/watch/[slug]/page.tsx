@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState, useEffect } from 'react';
+import { use, useState, useLayoutEffect } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { PageLayout } from '@/components/layout/page-layout';
@@ -9,7 +9,7 @@ import { VideoMetadataPanel } from '@/components/video/video-metadata-panel';
 import { VideoSuggestions } from '@/components/video/video-suggestions';
 import { AdminVideoEditButton } from '@/components/admin/admin-video-edit-button';
 import { useVideo, useNearbyVideos } from '@/hooks/use-videos';
-import { primeVideoStream } from '@/lib/video-cache';
+import { primeVideoStream, findVideoInCache } from '@/lib/video-cache';
 import { formatViews, formatDuration, formatUploadLabel, cn } from '@/lib/utils';
 import { Eye, Calendar, Film, Clock } from 'lucide-react';
 import type { Video } from '@/lib/api/types';
@@ -26,7 +26,18 @@ export default function WatchPage({
   const [editedVideo, setEditedVideo] = useState<Video | null>(null);
   const displayVideo = editedVideo ?? video;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const cached = findVideoInCache(queryClient, slug);
+    const streamUrl =
+      cached?.cdnUrl ??
+      cached?.qualities?.find((q) => q.url)?.url ??
+      cached?.qualities?.[0]?.url;
+    if (streamUrl) {
+      primeVideoStream(streamUrl);
+    }
+  }, [queryClient, slug]);
+
+  useLayoutEffect(() => {
     const streamUrl =
       displayVideo?.cdnUrl ??
       displayVideo?.qualities?.find((q) => q.url)?.url ??

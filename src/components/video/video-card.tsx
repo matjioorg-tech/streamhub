@@ -38,7 +38,10 @@ export function VideoCard({
         href={`/watch/${video.slug}`}
         prefetch
         className="block"
-        onPointerDown={() => markVideoAutoplayIntent(video.slug)}
+        onPointerDown={() => {
+          markVideoAutoplayIntent(video.slug);
+          prefetchWatch();
+        }}
         onMouseEnter={prefetchWatch}
         onFocus={prefetchWatch}
         onTouchStart={prefetchWatch}
