@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from 'react';
 import { adminApi } from '@/lib/api';
 import type { B2StorageKey } from '@/lib/api/types';
-import { formatBytes } from '@/lib/utils';
+import { cn, formatBytes } from '@/lib/utils';
 import { keysForSameVideoPrefix } from '@/lib/video-storage-key';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
@@ -192,10 +192,10 @@ export function StorageDataModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-        <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
-          <div className="flex items-start justify-between gap-4 border-b border-zinc-800 px-6 py-4">
-            <div>
+      <div className="fixed inset-0 z-50 flex flex-col bg-black/70 sm:items-center sm:justify-center sm:p-4">
+        <div className="mt-auto flex max-h-[92dvh] w-full max-w-4xl flex-col rounded-t-2xl border border-zinc-800 bg-zinc-950 shadow-2xl sm:mt-0 sm:max-h-[90vh] sm:rounded-2xl">
+          <div className="flex flex-col gap-3 border-b border-zinc-800 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:px-6">
+            <div className="min-w-0">
               <h2 className="text-lg font-semibold text-white">
                 Storage data — {storageKey.name}
               </h2>
@@ -204,12 +204,12 @@ export function StorageDataModal({
                 loaded
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setDeleteRequest({ type: 'wipe' })}
                 disabled={deleting}
-                className="rounded-lg border border-red-800 px-3 py-1.5 text-sm text-red-300 hover:bg-red-950 disabled:opacity-50"
+                className="rounded-lg border border-red-800 px-3 py-2 text-sm text-red-300 hover:bg-red-950 disabled:opacity-50"
               >
                 Wipe all
               </button>
@@ -220,15 +220,15 @@ export function StorageDataModal({
                     setDeleteRequest({ type: 'many', keys: [...selectedKeys] })
                   }
                   disabled={deleting}
-                  className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                  className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
                 >
-                  Delete selected ({selectedCount})
+                  Delete ({selectedCount})
                 </button>
               )}
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
+                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
               >
                 Close
               </button>
@@ -240,47 +240,111 @@ export function StorageDataModal({
               e.preventDefault();
               setSearchPrefix(prefix.trim());
             }}
-            className="flex gap-2 border-b border-zinc-800 px-6 py-3"
+            className="flex flex-col gap-2 border-b border-zinc-800 px-4 py-3 sm:flex-row sm:px-6"
           >
             <input
               value={prefix}
               onChange={(e) => setPrefix(e.target.value)}
               placeholder="Filter by prefix, e.g. videos/"
-              className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+              className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm"
             />
-            <button
-              type="submit"
-              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-800"
-            >
-              Filter
-            </button>
-            {searchPrefix && (
+            <div className="flex gap-2">
               <button
-                type="button"
-                onClick={() => {
-                  setPrefix('');
-                  setSearchPrefix('');
-                }}
-                className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-800"
+                type="submit"
+                className="flex-1 rounded-lg border border-zinc-700 px-4 py-2.5 text-sm hover:bg-zinc-800 sm:flex-none sm:py-2"
               >
-                Clear
+                Filter
               </button>
-            )}
+              {searchPrefix && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPrefix('');
+                    setSearchPrefix('');
+                  }}
+                  className="flex-1 rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-400 hover:bg-zinc-800 sm:flex-none sm:py-2"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </form>
 
           {error && (
-            <p className="mx-6 mt-3 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+            <p className="mx-4 mt-3 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300 sm:mx-6">
               {error}
             </p>
           )}
 
-          <div className="flex-1 overflow-auto px-6 py-4">
+          <div className="flex-1 overflow-auto px-4 py-4 sm:px-6">
             {loading ? (
               <p className="text-zinc-400">Loading objects...</p>
             ) : objects.length === 0 ? (
               <p className="text-zinc-400">No objects found in this bucket.</p>
             ) : (
-              <table className="w-full text-left text-sm">
+              <>
+                {/* Mobile card layout */}
+                <div className="space-y-2 md:hidden">
+                  <label className="flex items-center gap-2 px-1 py-1 text-sm text-zinc-400">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      aria-label="Select all objects"
+                      className="h-5 w-5 rounded border-zinc-600 bg-zinc-950 accent-red-600"
+                    />
+                    Select all
+                  </label>
+                  {objects.map((obj) => (
+                    <div
+                      key={obj.key}
+                      className={cn(
+                        'rounded-xl border border-zinc-800 bg-zinc-900/50 p-3',
+                        selectedKeys.has(obj.key) && 'ring-1 ring-red-500/50',
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedKeys.has(obj.key)}
+                          onChange={() => toggleOne(obj.key)}
+                          aria-label={`Select ${obj.key}`}
+                          className="mt-0.5 h-5 w-5 shrink-0 rounded border-zinc-600 bg-zinc-950 accent-red-600"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="break-all font-mono text-xs text-zinc-300">{obj.key}</p>
+                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500">
+                            <span>{formatBytes(obj.size)}</span>
+                            {obj.lastModified && (
+                              <span>{new Date(obj.lastModified).toLocaleDateString()}</span>
+                            )}
+                          </div>
+                          <div className="mt-2 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleView(obj.key)}
+                              disabled={viewingKey === obj.key || deleting}
+                              className="rounded-lg border border-blue-900/50 bg-blue-950/30 px-3 py-1.5 text-xs text-blue-400 disabled:opacity-50"
+                            >
+                              {viewingKey === obj.key ? 'Opening...' : 'View'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteRequest({ type: 'one', key: obj.key })}
+                              disabled={deleting}
+                              className="rounded-lg border border-red-900/50 bg-red-950/30 px-3 py-1.5 text-xs text-red-400 disabled:opacity-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop table */}
+                <table className="hidden w-full text-left text-sm md:table">
                 <thead className="sticky top-0 bg-zinc-950 text-zinc-400">
                   <tr className="border-b border-zinc-800">
                     <th className="w-10 p-2">
@@ -349,11 +413,12 @@ export function StorageDataModal({
                   ))}
                 </tbody>
               </table>
+              </>
             )}
           </div>
 
           {nextToken && (
-            <div className="border-t border-zinc-800 px-6 py-4">
+            <div className="border-t border-zinc-800 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
               <button
                 type="button"
                 onClick={() => void fetchObjects(nextToken, true)}

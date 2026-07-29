@@ -57,7 +57,7 @@ export default function AdminTeraboxPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">TeraBox</h1>
+        <h1 className="text-xl font-bold sm:text-2xl">TeraBox</h1>
         <p className="mt-1 text-sm text-zinc-400">
           Paste your browser cookie from terabox.com. The Telegram bot uses it to download
           videos from TeraBox share links.
@@ -117,19 +117,19 @@ export default function AdminTeraboxPage() {
           />
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
           <button
             type="button"
             onClick={handleTest}
             disabled={testLink.isPending || (!cookie.trim() && !settings?.configured)}
-            className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-800 disabled:opacity-50"
+            className="w-full rounded-lg border border-zinc-700 px-4 py-3 text-sm hover:bg-zinc-800 disabled:opacity-50 sm:w-auto sm:py-2"
           >
             {testLink.isPending ? 'Testing...' : 'Test link'}
           </button>
           <button
             type="submit"
             disabled={saveCookie.isPending || !cookie.trim()}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium hover:bg-red-500 disabled:opacity-50"
+            className="w-full rounded-lg bg-red-600 px-4 py-3 text-sm font-medium hover:bg-red-500 disabled:opacity-50 sm:w-auto sm:py-2"
           >
             {saveCookie.isPending ? 'Saving...' : 'Save cookie'}
           </button>

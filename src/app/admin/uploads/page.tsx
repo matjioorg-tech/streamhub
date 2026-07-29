@@ -32,7 +32,7 @@ export default function AdminUploadsPage() {
 
   return (
     <>
-      <h1 className="mb-6 text-2xl font-bold">Upload Tasks</h1>
+      <h1 className="mb-4 text-xl font-bold sm:mb-6 sm:text-2xl">Upload Tasks</h1>
 
       <div className="mb-6 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -62,7 +62,7 @@ export default function AdminUploadsPage() {
             type="button"
             onClick={() => void handleClearTemp()}
             disabled={clearTempDir.isPending || tempLoading}
-            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+            className={`w-full shrink-0 rounded-lg px-4 py-3 text-sm font-medium transition-colors disabled:opacity-50 sm:w-auto sm:py-2 ${
               confirmClear
                 ? 'bg-red-600 text-white hover:bg-red-500'
                 : 'border border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700'
@@ -102,6 +102,12 @@ export default function AdminUploadsPage() {
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <span className="rounded bg-zinc-800 px-2 py-0.5 text-xs">{task.status}</span>
                   <span className="text-sm text-zinc-400">{task.progress}%</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                  <div
+                    className="h-full rounded-full bg-red-500 transition-all"
+                    style={{ width: `${Math.min(100, task.progress)}%` }}
+                  />
                 </div>
                 {task.error && (
                   <p className="mt-2 break-words text-sm text-red-400">{task.error}</p>

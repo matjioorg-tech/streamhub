@@ -1,49 +1,173 @@
 'use client';
 
 import Link from 'next/link';
+import {
+  AlertTriangle,
+  ChevronRight,
+  Clock,
+  Eye,
+  Film,
+  HardDrive,
+  Key,
+  LayoutDashboard,
+  Mail,
+  Upload,
+} from 'lucide-react';
 import { useAdminDashboard } from '@/hooks/use-admin';
+import { cn } from '@/lib/utils';
+
+const quickLinks = [
+  {
+    href: '/admin/videos',
+    label: 'Manage Videos',
+    description: 'Publish, edit, or delete videos',
+    icon: Film,
+    color: 'text-red-400 bg-red-950/40',
+  },
+  {
+    href: '/admin/uploads',
+    label: 'Upload Tasks',
+    description: 'Track processing progress',
+    icon: Upload,
+    color: 'text-blue-400 bg-blue-950/40',
+  },
+  {
+    href: '/admin/storage-keys',
+    label: 'Storage Keys',
+    description: 'B2 buckets and quotas',
+    icon: Key,
+    color: 'text-amber-400 bg-amber-950/40',
+  },
+  {
+    href: '/admin/terabox',
+    label: 'TeraBox',
+    description: 'Cookie and link testing',
+    icon: HardDrive,
+    color: 'text-purple-400 bg-purple-950/40',
+  },
+  {
+    href: '/admin/invitations',
+    label: 'Invite Admins',
+    description: 'Send admin invitations',
+    icon: Mail,
+    color: 'text-green-400 bg-green-950/40',
+  },
+];
+
+function StatSkeleton() {
+  return (
+    <div className="animate-pulse rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+      <div className="h-3 w-20 rounded bg-zinc-800" />
+      <div className="mt-3 h-8 w-14 rounded bg-zinc-800" />
+    </div>
+  );
+}
 
 export default function AdminDashboardPage() {
   const { data, isLoading } = useAdminDashboard();
 
+  const stats = data
+    ? [
+        {
+          label: 'Total Videos',
+          value: data.totalVideos,
+          icon: Film,
+          accent: 'text-white',
+        },
+        {
+          label: 'Published',
+          value: data.publishedVideos,
+          icon: LayoutDashboard,
+          accent: 'text-green-400',
+        },
+        {
+          label: 'Failed Uploads',
+          value: data.failedUploads,
+          icon: AlertTriangle,
+          accent: data.failedUploads > 0 ? 'text-red-400' : 'text-white',
+        },
+        {
+          label: 'Pending Uploads',
+          value: data.pendingUploads,
+          icon: Clock,
+          accent: data.pendingUploads > 0 ? 'text-amber-400' : 'text-white',
+        },
+        {
+          label: 'Total Views',
+          value: data.totalViews,
+          icon: Eye,
+          accent: 'text-blue-400',
+        },
+      ]
+    : [];
+
   return (
-    <>
-      <h1 className="mb-6 text-2xl font-bold">Admin Dashboard</h1>
+    <div className="space-y-6 md:space-y-8">
+      <div>
+        <h1 className="text-xl font-bold sm:text-2xl">Admin Dashboard</h1>
+        <p className="mt-1 text-sm text-zinc-400">
+          Overview of your platform at a glance.
+        </p>
+      </div>
+
       {isLoading ? (
-        <div className="text-zinc-400">Loading...</div>
-      ) : data ? (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-          {[
-            { label: 'Total Videos', value: data.totalVideos },
-            { label: 'Published', value: data.publishedVideos },
-            { label: 'Failed Uploads', value: data.failedUploads },
-            { label: 'Pending Uploads', value: data.pendingUploads },
-            { label: 'Total Views', value: data.totalViews },
-          ].map((stat) => (
-            <div key={stat.label} className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-              <p className="text-sm text-zinc-400">{stat.label}</p>
-              <p className="text-2xl font-bold text-white">{stat.value}</p>
-            </div>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <StatSkeleton key={i} />
           ))}
         </div>
+      ) : data ? (
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+          {stats.map((stat) => {
+            const Icon = stat.icon;
+            return (
+              <div
+                key={stat.label}
+                className="rounded-xl border border-zinc-800 bg-zinc-900/80 p-3.5 sm:p-4"
+              >
+                <div className="flex items-center gap-2">
+                  <Icon className="h-4 w-4 shrink-0 text-zinc-500" />
+                  <p className="truncate text-xs text-zinc-400 sm:text-sm">{stat.label}</p>
+                </div>
+                <p className={cn('mt-2 text-xl font-bold sm:text-2xl', stat.accent)}>
+                  {stat.value.toLocaleString()}
+                </p>
+              </div>
+            );
+          })}
+        </div>
       ) : null}
-      <div className="mt-8 flex flex-wrap gap-4 text-sm">
-        <Link href="/admin/videos" className="text-red-400 hover:underline">
-          Manage videos →
-        </Link>
-        <Link href="/admin/uploads" className="text-red-400 hover:underline">
-          View uploads →
-        </Link>
-        <Link href="/admin/storage-keys" className="text-red-400 hover:underline">
-          Storage keys →
-        </Link>
-        <Link href="/admin/terabox" className="text-red-400 hover:underline">
-          TeraBox cookie →
-        </Link>
-        <Link href="/admin/invitations" className="text-red-400 hover:underline">
-          Invite admins →
-        </Link>
+
+      <div>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
+          Quick Actions
+        </h2>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {quickLinks.map(({ href, label, description, icon: Icon, color }) => (
+            <Link
+              key={href}
+              href={href}
+              className="group flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 transition-colors active:bg-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-900"
+            >
+              <div
+                className={cn(
+                  'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
+                  color,
+                )}
+              >
+                <Icon className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-white">{label}</p>
+                <p className="mt-0.5 truncate text-xs text-zinc-500 sm:text-sm">
+                  {description}
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600 transition-transform group-hover:translate-x-0.5 group-hover:text-zinc-400" />
+            </Link>
+          ))}
+        </div>
       </div>
-    </>
+    </div>
   );
 }

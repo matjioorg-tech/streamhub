@@ -95,7 +95,7 @@ export default function AdminInvitationsPage() {
 
   return (
     <>
-      <h1 className="mb-2 text-2xl font-bold">Admin Invitations</h1>
+      <h1 className="mb-2 text-xl font-bold sm:text-2xl">Admin Invitations</h1>
       <p className="mb-6 text-sm text-zinc-400">
         Invite others to join as administrators. An email with the invite link is sent via Resend.
       </p>
@@ -113,7 +113,7 @@ export default function AdminInvitationsPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="mb-8 flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/80 p-6 sm:flex-row sm:items-end"
+        className="mb-8 flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/80 p-4 sm:flex-row sm:items-end sm:p-6"
       >
         <label className="flex-1 text-sm">
           <span className="mb-1 block text-zinc-400">Email address</span>
@@ -129,7 +129,7 @@ export default function AdminInvitationsPage() {
         <button
           type="submit"
           disabled={createInvitation.isPending}
-          className="rounded-lg bg-red-600 px-5 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+          className="w-full rounded-lg bg-red-600 px-5 py-3 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 sm:w-auto sm:py-2"
         >
           {createInvitation.isPending ? 'Sending...' : 'Send invitation'}
         </button>
@@ -162,40 +162,40 @@ export default function AdminInvitationsPage() {
               </div>
 
               {invitation.status === 'pending' && (
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <input
-                    readOnly
-                    value={invitation.inviteUrl}
-                    className="flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-xs text-zinc-400"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleResend(invitation.id, invitation.email)}
-                      disabled={resendInvitation.isPending}
-                      className="rounded-lg border border-zinc-700 px-3 py-2 text-xs hover:bg-zinc-800 disabled:opacity-50"
-                    >
-                      Resend email
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(invitation.id, invitation.inviteUrl)}
-                      className="rounded-lg border border-zinc-700 px-3 py-2 text-xs hover:bg-zinc-800"
-                    >
-                      {copiedId === invitation.id ? 'Copied!' : 'Copy link'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setRevokeTarget({ id: invitation.id, email: invitation.email })
-                      }
-                      disabled={revokeInvitation.isPending}
-                      className="rounded-lg border border-red-900 px-3 py-2 text-xs text-red-400 hover:bg-red-950 disabled:opacity-50"
-                    >
-                      Revoke
-                    </button>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <input
+                      readOnly
+                      value={invitation.inviteUrl}
+                      className="w-full flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 font-mono text-xs text-zinc-400"
+                    />
+                    <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleResend(invitation.id, invitation.email)}
+                        disabled={resendInvitation.isPending}
+                        className="rounded-lg border border-zinc-700 px-2 py-2.5 text-xs hover:bg-zinc-800 disabled:opacity-50 sm:px-3 sm:py-2"
+                      >
+                        Resend
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(invitation.id, invitation.inviteUrl)}
+                        className="rounded-lg border border-zinc-700 px-2 py-2.5 text-xs hover:bg-zinc-800 sm:px-3 sm:py-2"
+                      >
+                        {copiedId === invitation.id ? 'Copied!' : 'Copy'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRevokeTarget({ id: invitation.id, email: invitation.email })
+                        }
+                        disabled={revokeInvitation.isPending}
+                        className="rounded-lg border border-red-900 px-2 py-2.5 text-xs text-red-400 hover:bg-red-950 disabled:opacity-50 sm:px-3 sm:py-2"
+                      >
+                        Revoke
+                      </button>
+                    </div>
                   </div>
-                </div>
               )}
             </div>
           ))}

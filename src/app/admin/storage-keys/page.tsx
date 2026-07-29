@@ -121,20 +121,20 @@ export default function AdminStorageKeysPage() {
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div className="mb-4 flex flex-col gap-4 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Backblaze Storage Keys</h1>
+          <h1 className="text-xl font-bold sm:text-2xl">Backblaze Storage Keys</h1>
           <p className="mt-1 text-sm text-zinc-400">
             Each key has a 9.5 GB quota. Priority is auto-assigned — buckets with the most free space are used first.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {keys && keys.length > 0 && (
             <button
               type="button"
               onClick={handleSyncAll}
               disabled={syncAllUsage.isPending}
-              className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-800 disabled:opacity-50"
+              className="w-full rounded-lg border border-zinc-700 px-4 py-3 text-sm hover:bg-zinc-800 disabled:opacity-50 sm:w-auto sm:py-2"
             >
               {syncAllUsage.isPending ? 'Syncing...' : 'Sync all'}
             </button>
@@ -142,7 +142,7 @@ export default function AdminStorageKeysPage() {
           <button
             type="button"
             onClick={() => setShowForm((v) => !v)}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500"
+            className="w-full rounded-lg bg-red-600 px-4 py-3 text-sm font-medium text-white hover:bg-red-500 sm:w-auto sm:py-2"
           >
             {showForm ? 'Cancel' : 'Add API Key'}
           </button>
@@ -163,7 +163,7 @@ export default function AdminStorageKeysPage() {
       {showForm && (
         <form
           onSubmit={handleSubmit}
-          className="mb-8 rounded-xl border border-zinc-800 bg-zinc-900/80 p-6"
+          className="mb-8 rounded-xl border border-zinc-800 bg-zinc-900/80 p-4 sm:p-6"
         >
           <h2 className="mb-4 text-lg font-semibold">New B2 API Key</h2>
           <div className="grid gap-4 md:grid-cols-2">
@@ -337,14 +337,14 @@ export default function AdminStorageKeysPage() {
                 <button
                   type="button"
                   onClick={() => setEditingKey(key)}
-                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs hover:bg-zinc-800"
+                  className="rounded-lg border border-zinc-700 px-3 py-2 text-xs hover:bg-zinc-800 sm:py-1.5"
                 >
                   Edit
                 </button>
                 <button
                   type="button"
                   onClick={() => setViewingKey(key)}
-                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs hover:bg-zinc-800"
+                  className="rounded-lg border border-zinc-700 px-3 py-2 text-xs hover:bg-zinc-800 sm:py-1.5"
                 >
                   View data
                 </button>
@@ -352,7 +352,7 @@ export default function AdminStorageKeysPage() {
                   type="button"
                   onClick={() => handleSync(key.id)}
                   disabled={syncUsage.isPending}
-                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs hover:bg-zinc-800 disabled:opacity-50"
+                  className="rounded-lg border border-zinc-700 px-3 py-2 text-xs hover:bg-zinc-800 disabled:opacity-50 sm:py-1.5"
                 >
                   Sync usage from B2
                 </button>
@@ -361,7 +361,7 @@ export default function AdminStorageKeysPage() {
                     type="button"
                     onClick={() => setDeactivateTarget({ id: key.id, name: key.name })}
                     disabled={deactivate.isPending}
-                    className="rounded-lg border border-red-900 px-3 py-1.5 text-xs text-red-400 hover:bg-red-950 disabled:opacity-50"
+                    className="rounded-lg border border-red-900 px-3 py-2 text-xs text-red-400 hover:bg-red-950 disabled:opacity-50 sm:py-1.5"
                   >
                     Deactivate
                   </button>

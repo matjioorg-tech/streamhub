@@ -97,9 +97,9 @@ export default function AdminVideosPage() {
     ) : null;
 
   return (
-    <>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold">Manage Videos</h1>
+    <div className={cn(selectedCount > 0 && 'pb-24 md:pb-0')}>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6 sm:gap-4">
+        <h1 className="text-xl font-bold sm:text-2xl">Manage Videos</h1>
         {selectedCount > 0 && (
           <button
             type="button"
@@ -111,7 +111,7 @@ export default function AdminVideosPage() {
               setDeleteRequest({ type: 'many', ids, titles });
             }}
             disabled={deleting}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+            className="hidden rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 md:inline-flex"
           >
             Delete selected ({selectedCount})
           </button>
@@ -130,6 +130,18 @@ export default function AdminVideosPage() {
         <>
           {/* Mobile card layout */}
           <div className="space-y-3 md:hidden">
+            {videoList.length > 0 && (
+              <label className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  aria-label="Select all videos"
+                  className="h-5 w-5 rounded border-zinc-600 bg-zinc-950 accent-red-600"
+                />
+                Select all ({videoList.length})
+              </label>
+            )}
             {videoList.map((video) => (
               <div
                 key={video.id}
@@ -281,6 +293,25 @@ export default function AdminVideosPage() {
       )}
 
       {deleteDialog}
-    </>
+
+      {selectedCount > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-800 bg-zinc-950/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:hidden">
+          <button
+            type="button"
+            onClick={() => {
+              const ids = [...selectedIds];
+              const titles = videoList
+                .filter((v) => selectedIds.has(v.id))
+                .map((v) => v.title);
+              setDeleteRequest({ type: 'many', ids, titles });
+            }}
+            disabled={deleting}
+            className="w-full rounded-lg bg-red-600 py-3 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+          >
+            Delete {selectedCount} selected
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

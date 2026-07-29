@@ -3,7 +3,17 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Menu, X } from 'lucide-react';
+import {
+  Film,
+  HardDrive,
+  Key,
+  LayoutDashboard,
+  LogOut,
+  Mail,
+  Menu,
+  Upload,
+  X,
+} from 'lucide-react';
 import { authApi } from '@/lib/api';
 import {
   clearSession,
@@ -15,12 +25,12 @@ import {
 import { cn } from '@/lib/utils';
 
 const navLinks = [
-  { href: '/admin', label: 'Dashboard', exact: true },
-  { href: '/admin/videos', label: 'Videos' },
-  { href: '/admin/uploads', label: 'Uploads' },
-  { href: '/admin/storage-keys', label: 'Storage Keys' },
-  { href: '/admin/terabox', label: 'TeraBox' },
-  { href: '/admin/invitations', label: 'Invitations' },
+  { href: '/admin', label: 'Dashboard', exact: true, icon: LayoutDashboard },
+  { href: '/admin/videos', label: 'Videos', icon: Film },
+  { href: '/admin/uploads', label: 'Uploads', icon: Upload },
+  { href: '/admin/storage-keys', label: 'Storage Keys', icon: Key },
+  { href: '/admin/terabox', label: 'TeraBox', icon: HardDrive },
+  { href: '/admin/invitations', label: 'Invitations', icon: Mail },
 ];
 
 function AdminNav() {
@@ -58,7 +68,7 @@ function AdminNav() {
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
-          {navLinks.map(({ href, label, exact }) => {
+          {navLinks.map(({ href, label, exact, icon: Icon }) => {
             const active = exact ? pathname === href : pathname.startsWith(href);
             return (
               <Link
@@ -105,37 +115,47 @@ function AdminNav() {
       {menuOpen && (
         <>
           <div
-            className="fixed inset-0 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 bg-black/60 md:hidden"
+            className="fixed inset-0 z-40 bg-black/70 md:hidden"
             onClick={() => setMenuOpen(false)}
             aria-hidden
           />
-          <nav className="relative z-50 border-t border-zinc-800 bg-zinc-950 px-4 py-3 md:hidden">
+          <nav className="fixed inset-x-0 top-[calc(3.25rem+env(safe-area-inset-top))] bottom-0 z-50 flex flex-col overflow-y-auto bg-zinc-950 px-4 py-4 pb-[env(safe-area-inset-bottom)] md:hidden">
+            {user && (
+              <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3">
+                <p className="text-xs uppercase tracking-wider text-zinc-500">Signed in as</p>
+                <p className="mt-1 truncate text-sm font-medium text-white">{user.email}</p>
+              </div>
+            )}
             <div className="flex flex-col gap-1">
-              {navLinks.map(({ href, label, exact }) => {
+              {navLinks.map(({ href, label, exact, icon: Icon }) => {
                 const active = exact ? pathname === href : pathname.startsWith(href);
                 return (
                   <Link
                     key={href}
                     href={href}
                     className={cn(
-                      'rounded-lg px-4 py-3 text-sm font-medium transition-colors',
+                      'flex items-center gap-3 rounded-xl px-4 py-3.5 text-sm font-medium transition-colors',
                       active
-                        ? 'bg-zinc-800 text-white'
-                        : 'text-zinc-300 hover:bg-zinc-800/60',
+                        ? 'bg-red-950/40 text-white ring-1 ring-red-900/50'
+                        : 'text-zinc-300 active:bg-zinc-800/60',
                     )}
                   >
+                    <Icon
+                      className={cn('h-5 w-5 shrink-0', active ? 'text-red-400' : 'text-zinc-500')}
+                    />
                     {label}
                   </Link>
                 );
               })}
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="mt-2 rounded-lg border border-zinc-700 px-4 py-3 text-left text-sm text-zinc-300 hover:bg-zinc-800"
-              >
-                Logout
-              </button>
             </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="mt-auto flex items-center gap-3 rounded-xl border border-zinc-700 px-4 py-3.5 text-left text-sm text-zinc-300 active:bg-zinc-800"
+            >
+              <LogOut className="h-5 w-5 shrink-0 text-zinc-500" />
+              Logout
+            </button>
           </nav>
         </>
       )}
@@ -213,7 +233,7 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <AdminNav />
-      <main className="mx-auto max-w-7xl px-4 py-5 pb-[env(safe-area-inset-bottom)] md:py-6">
+      <main className="mx-auto max-w-7xl px-3 py-4 pb-[env(safe-area-inset-bottom)] sm:px-4 sm:py-5 md:py-6">
         {children}
       </main>
     </div>

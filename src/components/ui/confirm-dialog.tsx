@@ -20,12 +20,12 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4">
       <div
         role="alertdialog"
         aria-labelledby="confirm-title"
         aria-describedby="confirm-description"
-        className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+        className="w-full max-w-md rounded-t-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl sm:rounded-xl sm:p-6"
       >
         <h3 id="confirm-title" className="text-lg font-semibold text-white">
           {title}
@@ -33,12 +33,12 @@ export function ConfirmDialog({
         <p id="confirm-description" className="mt-2 whitespace-pre-wrap text-sm text-zinc-400">
           {description}
         </p>
-        <div className="mt-6 flex justify-end gap-2">
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+            className="rounded-lg border border-zinc-700 px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-50 sm:py-2"
           >
             {cancelLabel}
           </button>
@@ -46,7 +46,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+            className="rounded-lg bg-red-600 px-4 py-3 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 sm:py-2"
           >
             {loading ? 'Working…' : confirmLabel}
           </button>
