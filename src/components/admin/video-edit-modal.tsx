@@ -1,10 +1,12 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { Video } from '@/lib/api/types';
-import { useCategories } from '@/hooks/use-categories';
+import { useCategories, useSubcategories } from '@/hooks/use-categories';
 import { useRegenerateVideoMetadata, useUpdateVideo } from '@/hooks/use-admin';
 import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
+import { getSubCategoryLabel } from '@/lib/category-labels';
+import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
 
 interface VideoEditModalProps {
@@ -42,6 +44,23 @@ export function VideoEditModal({ video, onClose, onSaved }: VideoEditModalProps)
   );
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [creatorSearch, setCreatorSearch] = useState('');
+  const [debouncedCreatorSearch, setDebouncedCreatorSearch] = useState('');
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedCreatorSearch(creatorSearch.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [creatorSearch]);
+
+  const selectedCategory = useMemo(
+    () => (categories ?? []).find((item) => item.id === categoryId),
+    [categories, categoryId],
+  );
+  const creatorLabel = getSubCategoryLabel(selectedCategory?.name ?? video.category?.name);
+  const { data: creatorOptions } = useSubcategories(
+    selectedCategory?.slug ?? '',
+    debouncedCreatorSearch,
+  );
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -181,16 +200,7 @@ export function VideoEditModal({ video, onClose, onSaved }: VideoEditModalProps)
             </label>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block">
-                <span className="mb-1 block text-sm text-zinc-400">Creator / Subcategory</span>
-                <input
-                  value={subCategory}
-                  onChange={(e) => setSubCategory(e.target.value)}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-white"
-                />
-              </label>
-
-              <label className="block">
+              <label className="block sm:col-span-2">
                 <span className="mb-1 block text-sm text-zinc-400">Category</span>
                 <select
                   value={categoryId}
@@ -205,6 +215,52 @@ export function VideoEditModal({ video, onClose, onSaved }: VideoEditModalProps)
                   ))}
                 </select>
               </label>
+
+              <div className="block sm:col-span-2">
+                <span className="mb-1 block text-sm text-zinc-400">{creatorLabel}</span>
+                <input
+                  value={subCategory}
+                  onChange={(e) => setSubCategory(e.target.value)}
+                  placeholder={`Type or pick a ${creatorLabel.toLowerCase()}`}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-white"
+                />
+                {selectedCategory && (
+                  <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/50">
+                    <input
+                      type="search"
+                      value={creatorSearch}
+                      onChange={(e) => setCreatorSearch(e.target.value)}
+                      placeholder={`Search ${creatorLabel.toLowerCase()}s in ${selectedCategory.name}...`}
+                      className="w-full border-b border-zinc-800 bg-transparent px-3 py-2 text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+                    />
+                    <ul className="max-h-36 overflow-y-auto p-1">
+                      {(creatorOptions ?? []).length === 0 ? (
+                        <li className="px-3 py-2 text-xs text-zinc-500">No matches — type a new name above</li>
+                      ) : (
+                        creatorOptions?.map((option) => (
+                          <li key={option.slug}>
+                            <button
+                              type="button"
+                              onClick={() => setSubCategory(option.name)}
+                              className={cn(
+                                'flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition hover:bg-zinc-800',
+                                subCategory.toLowerCase() === option.name.toLowerCase()
+                                  ? 'bg-red-500/15 text-red-300'
+                                  : 'text-zinc-300',
+                              )}
+                            >
+                              <span className="truncate">{option.name}</span>
+                              <span className="ml-2 shrink-0 text-xs text-zinc-500">
+                                {option.videoCount}
+                              </span>
+                            </button>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </div>
 
               <label className="block">
                 <span className="mb-1 block text-sm text-zinc-400">Content type</span>

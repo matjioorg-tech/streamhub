@@ -1,4 +1,5 @@
 import type { Video } from '@/lib/api/types';
+import { getSubCategoryLabel } from '@/lib/category-labels';
 import Link from 'next/link';
 
 interface VideoMetadataPanelProps {
@@ -31,7 +32,12 @@ export function VideoMetadataPanel({ video }: VideoMetadataPanelProps) {
 
   const metaChips: { label: string; value: string }[] = [];
   if (video.category?.name) metaChips.push({ label: 'Category', value: video.category.name });
-  if (video.subCategory) metaChips.push({ label: 'Creator', value: video.subCategory });
+  if (video.subCategory) {
+    metaChips.push({
+      label: getSubCategoryLabel(video.category?.name),
+      value: video.subCategory,
+    });
+  }
   if (video.contentType) metaChips.push({ label: 'Type', value: video.contentType });
   if (video.language && video.language !== 'Unknown') {
     metaChips.push({ label: 'Language', value: video.language });

@@ -8,7 +8,7 @@ interface SeekFeedbackOverlayProps {
   animationKey: number;
 }
 
-function SeekDirectionIcon({
+export function SeekDirectionIcon({
   direction,
   seconds,
   className,

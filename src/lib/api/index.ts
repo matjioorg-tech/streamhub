@@ -77,8 +77,10 @@ export const categoriesApi = {
     return unwrap(response);
   },
 
-  listSubcategories: async (slug: string): Promise<SubCategory[]> => {
-    const response = await apiClient.get(`/categories/${slug}/subcategories`);
+  listSubcategories: async (slug: string, search?: string): Promise<SubCategory[]> => {
+    const response = await apiClient.get(`/categories/${slug}/subcategories`, {
+      params: search ? { search } : undefined,
+    });
     return unwrap(response);
   },
 };

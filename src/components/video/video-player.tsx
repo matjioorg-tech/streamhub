@@ -8,8 +8,6 @@ import {
   VolumeX,
   Maximize,
   Minimize,
-  SkipBack,
-  SkipForward,
   Settings,
   Check,
   AlertCircle,
@@ -19,7 +17,7 @@ import { cn, formatDuration } from '@/lib/utils';
 import { pickAutoQualityOption } from '@/lib/video-quality';
 import { primeVideoStream } from '@/lib/video-cache';
 import { takeVideoAutoplayIntent } from '@/lib/video-autoplay';
-import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
+import { SeekFeedbackOverlay, SeekDirectionIcon } from '@/components/video/seek-feedback-overlay';
 import {
   DEFAULT_VIDEO_ZOOM,
   applyPinchCenterZoom,
@@ -1931,9 +1929,13 @@ export function VideoPlayer({
       <div
         className={cn(
           'player-fs-chrome pointer-events-none absolute inset-x-0 bottom-0 z-20',
-          inFullscreen && isMobileDevice() && !liftChromeInPortraitFs && 'player-fs-chrome-mobile',
+          inFullscreen && isMobileDevice() && 'player-fs-chrome-mobile',
         )}
-        style={fsChromeBottomPx > 0 ? { bottom: `${fsChromeBottomPx}px` } : undefined}
+        style={
+          fsChromeBottomPx > 0
+            ? ({ '--player-chrome-bottom': `${fsChromeBottomPx}px` } as React.CSSProperties)
+            : undefined
+        }
       >
         <div
           className={cn(
@@ -1962,7 +1964,7 @@ export function VideoPlayer({
               className="pointer-events-auto hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
               aria-label={`Rewind ${SEEK_SECONDS} seconds`}
             >
-              <SkipBack className="h-4 w-4" />
+              <SeekDirectionIcon direction="back" seconds={SEEK_SECONDS} className="h-6 w-6" />
             </button>
 
             <button
@@ -1971,7 +1973,7 @@ export function VideoPlayer({
               className="pointer-events-auto hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
               aria-label={`Forward ${SEEK_SECONDS} seconds`}
             >
-              <SkipForward className="h-4 w-4" />
+              <SeekDirectionIcon direction="forward" seconds={SEEK_SECONDS} className="h-6 w-6" />
             </button>
 
             <span className="ml-1 text-[11px] tabular-nums text-white/80 sm:text-xs">

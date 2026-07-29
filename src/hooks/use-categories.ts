@@ -18,10 +18,10 @@ export function useCategory(slug: string) {
   });
 }
 
-export function useSubcategories(categorySlug: string) {
+export function useSubcategories(categorySlug: string, search?: string) {
   return useQuery({
-    queryKey: ['categories', categorySlug, 'subcategories'],
-    queryFn: () => categoriesApi.listSubcategories(categorySlug),
+    queryKey: ['categories', categorySlug, 'subcategories', search ?? ''],
+    queryFn: () => categoriesApi.listSubcategories(categorySlug, search),
     enabled: !!categorySlug,
   });
 }
