@@ -63,6 +63,7 @@ export function getTouchCenter(touches: { length: number; 0?: TouchPoint; 1?: To
   };
 }
 
+/** Keep pan inside scaled content bounds so background never shows. */
 export function clampPan(
   scale: number,
   x: number,
@@ -79,29 +80,6 @@ export function clampPan(
   };
 }
 
-/** Zoom from the center of the viewport (stable in letterboxed fullscreen). */
-export function applyCenterZoom(
-  startScale: number,
-  nextScale: number,
-  startX: number,
-  startY: number,
-  containerWidth: number,
-  containerHeight: number,
-): VideoZoomTransform {
-  const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
-  if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
-
-  const ratio = startScale > 0 ? scale / startScale : 1;
-  const clamped = clampPan(
-    scale,
-    startX * ratio,
-    startY * ratio,
-    containerWidth,
-    containerHeight,
-  );
-  return { scale, ...clamped };
-}
-
 /** Zoom toward the pinch focal point (YouTube-style). */
 export function applyFocalZoom(
   containerRect: DOMRect,
@@ -111,16 +89,19 @@ export function applyFocalZoom(
   focalClientY: number,
   startX: number,
   startY: number,
+  contentWidth: number,
+  contentHeight: number,
 ): VideoZoomTransform {
   const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
   if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
 
+  // Focal point relative to the container/content center at rest.
   const focalX = focalClientX - containerRect.left - containerRect.width / 2;
   const focalY = focalClientY - containerRect.top - containerRect.height / 2;
-  const ratio = scale / startScale;
+  const ratio = startScale > 0 ? scale / startScale : 1;
   const x = focalX - (focalX - startX) * ratio;
   const y = focalY - (focalY - startY) * ratio;
-  const clamped = clampPan(scale, x, y, containerRect.width, containerRect.height);
+  const clamped = clampPan(scale, x, y, contentWidth, contentHeight);
   return { scale, ...clamped };
 }
 
@@ -129,7 +110,7 @@ export function snapVideoZoom(
   width: number,
   height: number,
 ): VideoZoomTransform {
-  if (transform.scale < VIDEO_ZOOM_SNAP) return DEFAULT_VIDEO_ZOOM;
+  if (transform.scale <= VIDEO_ZOOM_SNAP) return DEFAULT_VIDEO_ZOOM;
   if (Math.abs(transform.scale - 1) < 0.06) return DEFAULT_VIDEO_ZOOM;
   const clamped = clampPan(transform.scale, transform.x, transform.y, width, height);
   return { scale: transform.scale, ...clamped };
@@ -149,7 +130,31 @@ export function reclampVideoZoom(
   return { scale: transform.scale, ...clamped };
 }
 
-/** Pinch zoom anchored to the video content center. */
+/** Double-tap toggles between 1x fit and 2x centered on the tap location. */
+export function toggleDoubleTapZoom(
+  current: VideoZoomTransform,
+  tapClientX: number,
+  tapClientY: number,
+  containerRect: DOMRect,
+  contentWidth: number,
+  contentHeight: number,
+  targetScale = 2,
+): VideoZoomTransform {
+  if (current.scale > 1.05) return DEFAULT_VIDEO_ZOOM;
+  return applyFocalZoom(
+    containerRect,
+    1,
+    targetScale,
+    tapClientX,
+    tapClientY,
+    0,
+    0,
+    contentWidth,
+    contentHeight,
+  );
+}
+
+/** @deprecated Use applyFocalZoom — kept for compatibility. */
 export function applyPinchCenterZoom(
   startScale: number,
   nextScale: number,
@@ -157,22 +162,48 @@ export function applyPinchCenterZoom(
   startY: number,
   contentWidth: number,
   contentHeight: number,
+  focalClientX?: number,
+  focalClientY?: number,
+  containerRect?: DOMRect,
+): VideoZoomTransform {
+  if (containerRect && focalClientX != null && focalClientY != null) {
+    return applyFocalZoom(
+      containerRect,
+      startScale,
+      nextScale,
+      focalClientX,
+      focalClientY,
+      startX,
+      startY,
+      contentWidth,
+      contentHeight,
+    );
+  }
+  const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
+  if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
+  const ratio = startScale > 0 ? scale / startScale : 1;
+  const clamped = clampPan(scale, startX * ratio, startY * ratio, contentWidth, contentHeight);
+  return { scale, ...clamped };
+}
+
+/** @deprecated Use applyFocalZoom */
+export function applyCenterZoom(
+  startScale: number,
+  nextScale: number,
+  startX: number,
+  startY: number,
+  containerWidth: number,
+  containerHeight: number,
 ): VideoZoomTransform {
   const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
   if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
-
-  const hasPan = Math.abs(startX) > 0.5 || Math.abs(startY) > 0.5;
-  if (!hasPan) {
-    return { scale, x: 0, y: 0 };
-  }
-
   const ratio = startScale > 0 ? scale / startScale : 1;
   const clamped = clampPan(
     scale,
     startX * ratio,
     startY * ratio,
-    contentWidth,
-    contentHeight,
+    containerWidth,
+    containerHeight,
   );
   return { scale, ...clamped };
 }

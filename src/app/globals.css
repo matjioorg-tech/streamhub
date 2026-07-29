@@ -90,8 +90,8 @@ input[type='range']::-webkit-slider-runnable-track {
   bottom: 0 !important;
   left: 0 !important;
   z-index: 9999 !important;
-  width: auto !important;
-  height: auto !important;
+  width: 100vw !important;
+  height: 100dvh !important;
   max-width: none !important;
   max-height: none !important;
   min-height: 0 !important;

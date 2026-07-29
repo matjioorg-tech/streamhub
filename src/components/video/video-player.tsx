@@ -22,12 +22,15 @@ import { takeVideoAutoplayIntent } from '@/lib/video-autoplay';
 import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
 import {
   DEFAULT_VIDEO_ZOOM,
-  applyPinchCenterZoom,
+  applyFocalZoom,
   computeContainedVideoSize,
   formatZoomPercent,
+  getTouchCenter,
   getTouchDistance,
   clampPan,
   snapVideoZoom,
+  reclampVideoZoom,
+  toggleDoubleTapZoom,
   type VideoZoomTransform,
   VIDEO_ZOOM_MAX,
   VIDEO_ZOOM_MIN,
@@ -313,6 +316,9 @@ export function VideoPlayer({
     panOriginY: 0,
   });
   const zoomHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const centerTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingZoomRef = useRef<VideoZoomTransform | null>(null);
+  const zoomRafRef = useRef<number | null>(null);
 
   const [videoZoom, setVideoZoom] = useState<VideoZoomTransform>(DEFAULT_VIDEO_ZOOM);
   const [isPinching, setIsPinching] = useState(false);
@@ -373,6 +379,21 @@ export function VideoPlayer({
       setShowZoomHint(false);
     }
   }, []);
+
+  const scheduleVideoZoom = useCallback(
+    (next: VideoZoomTransform) => {
+      pendingZoomRef.current = next;
+      if (zoomRafRef.current !== null) return;
+      zoomRafRef.current = requestAnimationFrame(() => {
+        zoomRafRef.current = null;
+        if (pendingZoomRef.current) {
+          applyVideoZoom(pendingZoomRef.current);
+          pendingZoomRef.current = null;
+        }
+      });
+    },
+    [applyVideoZoom],
+  );
 
   const resetVideoZoom = useCallback(() => {
     videoZoomRef.current = DEFAULT_VIDEO_ZOOM;
@@ -589,10 +610,8 @@ export function VideoPlayer({
         pinch.panning = false;
         pinch.startDistance = getTouchDistance(e.touches);
         pinch.startScale = videoZoomRef.current.scale;
-        const hasPan =
-          Math.abs(videoZoomRef.current.x) > 0.5 || Math.abs(videoZoomRef.current.y) > 0.5;
-        pinch.startX = hasPan ? videoZoomRef.current.x : 0;
-        pinch.startY = hasPan ? videoZoomRef.current.y : 0;
+        pinch.startX = videoZoomRef.current.x;
+        pinch.startY = videoZoomRef.current.y;
         setIsPinching(true);
         setGestureActive(true);
         cleanupDocumentGesture();
@@ -646,16 +665,21 @@ export function VideoPlayer({
         const distance = getTouchDistance(e.touches);
         if (pinch.startDistance <= 0) return;
 
+        const rect = container.getBoundingClientRect();
+        const center = getTouchCenter(e.touches);
         const nextScale = pinch.startScale * (distance / pinch.startDistance);
-        const updated = applyPinchCenterZoom(
+        const updated = applyFocalZoom(
+          rect,
           pinch.startScale,
           nextScale,
+          center.x,
+          center.y,
           pinch.startX,
           pinch.startY,
           width,
           height,
         );
-        applyVideoZoom(updated);
+        scheduleVideoZoom(updated);
         return;
       }
 
@@ -684,7 +708,7 @@ export function VideoPlayer({
         applyVideoZoom({ scale: videoZoomRef.current.scale, x, y });
       }
     },
-    [applyVideoZoom, zoomEnabled],
+    [applyVideoZoom, scheduleVideoZoom, zoomEnabled],
   );
 
   const handlePinchTouchEnd = useCallback(
@@ -709,6 +733,15 @@ export function VideoPlayer({
         pinch.panning = false;
         pinchBlocksGesturesRef.current = false;
         setGestureActive(false);
+
+        if (zoomRafRef.current !== null) {
+          cancelAnimationFrame(zoomRafRef.current);
+          zoomRafRef.current = null;
+        }
+        if (pendingZoomRef.current) {
+          applyVideoZoom(pendingZoomRef.current);
+          pendingZoomRef.current = null;
+        }
 
         if (container) {
           const { width, height } = getZoomContentSize(
@@ -1175,6 +1208,10 @@ export function VideoPlayer({
         last.zone === zone &&
         (zone === 'left' || zone === 'right')
       ) {
+        if (centerTapTimerRef.current) {
+          clearTimeout(centerTapTimerRef.current);
+          centerTapTimerRef.current = null;
+        }
         if (zone === 'left') {
           seekRelative(-SEEK_SECONDS);
           showSeekFeedback('back');
@@ -1188,21 +1225,59 @@ export function VideoPlayer({
         return;
       }
 
+      if (
+        last &&
+        now - last.time < DOUBLE_TAP_MS &&
+        last.zone === zone &&
+        zone === 'center' &&
+        zoomEnabled
+      ) {
+        if (centerTapTimerRef.current) {
+          clearTimeout(centerTapTimerRef.current);
+          centerTapTimerRef.current = null;
+        }
+        lastTapRef.current = null;
+        const container = containerRef.current;
+        if (container) {
+          const rect = container.getBoundingClientRect();
+          const { width, height } = zoomContentSizeRef.current.width
+            ? zoomContentSizeRef.current
+            : getZoomContentSize(container, videoRef.current, video.width ?? 16, video.height ?? 9);
+          applyVideoZoom(
+            toggleDoubleTapZoom(videoZoomRef.current, clientX, clientY, rect, width, height),
+          );
+        }
+        setShowControls(true);
+        scheduleHideControls();
+        return;
+      }
+
       lastTapRef.current = { time: now, zone };
 
       if (zone === 'center') {
-        if (!playing) {
-          togglePlay();
-          setShowControls(true);
-          scheduleHideControls();
-        } else {
-          setShowControls((prev) => {
-            const next = !prev;
-            if (next) scheduleHideControls();
-            else clearHideTimer();
-            return next;
-          });
+        const runCenterTap = () => {
+          centerTapTimerRef.current = null;
+          if (!playing) {
+            togglePlay();
+            setShowControls(true);
+            scheduleHideControls();
+          } else {
+            setShowControls((prev) => {
+              const next = !prev;
+              if (next) scheduleHideControls();
+              else clearHideTimer();
+              return next;
+            });
+          }
+        };
+
+        if (zoomEnabled) {
+          if (centerTapTimerRef.current) clearTimeout(centerTapTimerRef.current);
+          centerTapTimerRef.current = setTimeout(runCenterTap, DOUBLE_TAP_MS);
+          return;
         }
+
+        runCenterTap();
         return;
       }
 
@@ -1211,12 +1286,16 @@ export function VideoPlayer({
     },
     [
       clearHideTimer,
+      applyVideoZoom,
       getTapZone,
       playing,
       scheduleHideControls,
       seekRelative,
       showSeekFeedback,
       togglePlay,
+      video.height,
+      video.width,
+      zoomEnabled,
     ],
   );
 
@@ -1432,9 +1511,14 @@ export function VideoPlayer({
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         frame = requestAnimationFrame(() => {
-          resetVideoZoom();
           syncZoomContentSize();
           updateFsPortraitChromeInset();
+          const { width, height } = zoomContentSizeRef.current;
+          if (videoZoomRef.current.scale > 1.05 && width > 0 && height > 0) {
+            applyVideoZoom(reclampVideoZoom(videoZoomRef.current, width, height));
+          } else {
+            resetVideoZoom();
+          }
         });
       });
     };
@@ -1447,7 +1531,7 @@ export function VideoPlayer({
       window.removeEventListener('orientationchange', onViewportChange);
       window.visualViewport?.removeEventListener('resize', onViewportChange);
     };
-  }, [resetVideoZoom, syncZoomContentSize, updateFsPortraitChromeInset, zoomEnabled]);
+  }, [applyVideoZoom, resetVideoZoom, syncZoomContentSize, updateFsPortraitChromeInset, zoomEnabled]);
 
   useEffect(() => {
     if (!zoomEnabled) {
@@ -1613,6 +1697,8 @@ export function VideoPlayer({
     return () => {
       clearHideTimer();
       if (seekHintTimerRef.current) clearTimeout(seekHintTimerRef.current);
+      if (centerTapTimerRef.current) clearTimeout(centerTapTimerRef.current);
+      if (zoomRafRef.current !== null) cancelAnimationFrame(zoomRafRef.current);
       const g = speedGestureRef.current;
       if (g.holdTimer) clearTimeout(g.holdTimer);
     };
@@ -1813,7 +1899,7 @@ export function VideoPlayer({
         ref={gestureLayerRef}
         className={cn(
           'absolute inset-0 z-10',
-          isFullscreen || pseudoFullscreen ? 'touch-none' : 'touch-manipulation',
+          (isFullscreen || pseudoFullscreen || zoomEnabled) && 'touch-none',
         )}
         onTouchStart={handlePinchTouchStart}
         onTouchMove={handlePinchTouchMove}
