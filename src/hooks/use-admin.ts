@@ -57,6 +57,24 @@ export function useFailedUploads() {
   });
 }
 
+export function useUploadTempDirStats() {
+  return useQuery({
+    queryKey: ['admin', 'upload-temp'],
+    queryFn: () => adminApi.uploadTempDirStats(),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useClearUploadTempDir() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => adminApi.clearUploadTempDir(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'upload-temp'] });
+    },
+  });
+}
+
 export function useStorageKeys() {
   return useQuery({
     queryKey: ['admin', 'storage-keys'],

@@ -141,6 +141,14 @@ export interface UploadTask {
   createdAt: string;
 }
 
+export interface UploadTempDirStats {
+  path: string;
+  exists: boolean;
+  bytes: number;
+  fileCount: number;
+  directoryCount: number;
+}
+
 export interface B2StorageKey {
   id: string;
   name: string;

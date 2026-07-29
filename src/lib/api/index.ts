@@ -7,6 +7,7 @@ import type {
   AuthResponse,
   DashboardStats,
   UploadTask,
+  UploadTempDirStats,
   B2StorageKey,
   CreateB2StorageKeyInput,
   UpdateB2StorageKeyInput,
@@ -136,6 +137,16 @@ export const adminApi = {
     return unwrap(response);
   },
 
+  uploadTempDirStats: async (): Promise<UploadTempDirStats> => {
+    const response = await apiClient.get('/admin/upload-temp');
+    return unwrap(response);
+  },
+
+  clearUploadTempDir: async (): Promise<UploadTempDirStats & { message: string }> => {
+    const response = await apiClient.post('/admin/upload-temp/clear');
+    return unwrap(response);
+  },
+
   videos: async (): Promise<Video[]> => {
     const response = await apiClient.get('/admin/videos');
     return unwrap(response);
@@ -169,11 +180,6 @@ export const adminApi = {
   bulkDeleteVideos: async (ids: string[]): Promise<{ deleted: number }> => {
     const response = await apiClient.post('/admin/videos/bulk-delete', { ids });
     return unwrap(response);
-  },
-
-  retryUpload: async (taskId: string): Promise<void> => {
-    const response = await apiClient.post(`/admin/uploads/${taskId}/retry`);
-    unwrap(response);
   },
 
   storageKeys: async (): Promise<B2StorageKey[]> => {

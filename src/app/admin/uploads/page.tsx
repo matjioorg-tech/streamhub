@@ -1,21 +1,90 @@
 'use client';
 
-import { useAdminUploads } from '@/hooks/use-admin';
-import { adminApi } from '@/lib/api';
+import { useState } from 'react';
+import { useAdminUploads, useClearUploadTempDir, useUploadTempDirStats } from '@/hooks/use-admin';
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** index;
+  return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
 
 export default function AdminUploadsPage() {
-  const { data: uploads, isLoading, refetch } = useAdminUploads();
-
-  const handleRetry = async (taskId: string) => {
-    await adminApi.retryUpload(taskId);
-    refetch();
-  };
+  const { data: uploads, isLoading } = useAdminUploads();
+  const { data: tempDir, isLoading: tempLoading, refetch: refetchTemp } = useUploadTempDirStats();
+  const clearTempDir = useClearUploadTempDir();
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const uploadList = uploads ?? [];
+
+  const handleClearTemp = async () => {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+
+    await clearTempDir.mutateAsync();
+    setConfirmClear(false);
+    await refetchTemp();
+  };
 
   return (
     <>
       <h1 className="mb-6 text-2xl font-bold">Upload Tasks</h1>
+
+      <div className="mb-6 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-medium text-white">Upload temp storage</h2>
+            <p className="mt-1 break-all text-sm text-zinc-400">
+              {tempLoading ? 'Loading path...' : (tempDir?.path ?? '/tmp/video-platform')}
+            </p>
+            <p className="mt-2 text-sm text-zinc-300">
+              {tempLoading ? (
+                'Calculating size...'
+              ) : tempDir ? (
+                <>
+                  <span className="font-semibold text-white">{formatBytes(tempDir.bytes)}</span>
+                  {' · '}
+                  {tempDir.fileCount} file{tempDir.fileCount === 1 ? '' : 's'}
+                  {' · '}
+                  {tempDir.directoryCount} folder{tempDir.directoryCount === 1 ? '' : 's'}
+                  {!tempDir.exists && ' · directory missing'}
+                </>
+              ) : (
+                'Unable to load temp directory stats'
+              )}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleClearTemp()}
+            disabled={clearTempDir.isPending || tempLoading}
+            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+              confirmClear
+                ? 'bg-red-600 text-white hover:bg-red-500'
+                : 'border border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700'
+            }`}
+          >
+            {clearTempDir.isPending
+              ? 'Clearing...'
+              : confirmClear
+                ? 'Confirm delete temp folder'
+                : 'Delete temp folder'}
+          </button>
+        </div>
+        {confirmClear && !clearTempDir.isPending && (
+          <p className="mt-3 text-sm text-amber-400">
+            This removes all temporary upload files on the processing server. Click again to confirm.
+          </p>
+        )}
+        {clearTempDir.isError && (
+          <p className="mt-3 text-sm text-red-400">Failed to clear temp folder. Try again.</p>
+        )}
+      </div>
+
       {isLoading ? (
         <div className="text-zinc-400">Loading...</div>
       ) : (
@@ -37,15 +106,6 @@ export default function AdminUploadsPage() {
                 {task.error && (
                   <p className="mt-2 break-words text-sm text-red-400">{task.error}</p>
                 )}
-                {task.status === 'failed' && (
-                  <button
-                    type="button"
-                    onClick={() => handleRetry(task.id)}
-                    className="mt-3 rounded-lg border border-red-900/50 bg-red-950/30 px-4 py-2 text-sm text-red-400"
-                  >
-                    Retry
-                  </button>
-                )}
               </div>
             ))}
           </div>
@@ -59,7 +119,6 @@ export default function AdminUploadsPage() {
                   <th className="p-3">Status</th>
                   <th className="p-3">Progress</th>
                   <th className="p-3">Error</th>
-                  <th className="p-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -74,16 +133,6 @@ export default function AdminUploadsPage() {
                     <td className="p-3">{task.progress}%</td>
                     <td className="max-w-xs break-words p-3 text-red-400">
                       {task.error ?? '-'}
-                    </td>
-                    <td className="p-3">
-                      {task.status === 'failed' && (
-                        <button
-                          onClick={() => handleRetry(task.id)}
-                          className="text-red-400 hover:underline"
-                        >
-                          Retry
-                        </button>
-                      )}
                     </td>
                   </tr>
                 ))}
