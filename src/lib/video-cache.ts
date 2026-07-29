@@ -36,9 +36,31 @@ export function findVideoInCache(queryClient: QueryClient, slug: string): Video 
 }
 
 export function prefetchVideoBySlug(queryClient: QueryClient, slug: string): void {
+  const cached = findVideoInCache(queryClient, slug);
+  const streamUrl =
+    cached?.cdnUrl ?? cached?.qualities?.find((q) => q.url)?.url ?? cached?.qualities?.[0]?.url;
+  if (streamUrl) {
+    primeVideoStream(streamUrl);
+  }
+
   void queryClient.prefetchQuery({
     queryKey: ['video', slug],
     queryFn: () => videosApi.getBySlug(slug),
     staleTime: 5 * 60 * 1000,
   });
+}
+
+/** Hint the browser to open a connection and fetch the start of the MP4. */
+export function primeVideoStream(url: string): void {
+  if (!url || typeof document === 'undefined') return;
+
+  const existing = document.querySelector(`link[data-video-prime="${url}"]`);
+  if (!existing) {
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'video';
+    link.href = url;
+    link.setAttribute('data-video-prime', url);
+    document.head.appendChild(link);
+  }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { PageLayout } from '@/components/layout/page-layout';
@@ -8,6 +8,7 @@ import { VideoPlayer } from '@/components/video/video-player';
 import { VideoMetadataPanel } from '@/components/video/video-metadata-panel';
 import { AdminVideoEditButton } from '@/components/admin/admin-video-edit-button';
 import { useVideo } from '@/hooks/use-videos';
+import { primeVideoStream } from '@/lib/video-cache';
 import { formatViews, formatDuration, cn } from '@/lib/utils';
 import { Eye, Calendar, Film } from 'lucide-react';
 import type { Video } from '@/lib/api/types';
@@ -22,6 +23,16 @@ export default function WatchPage({
   const { data: video, isLoading, error, refetch } = useVideo(slug);
   const [editedVideo, setEditedVideo] = useState<Video | null>(null);
   const displayVideo = editedVideo ?? video;
+
+  useEffect(() => {
+    const streamUrl =
+      displayVideo?.cdnUrl ??
+      displayVideo?.qualities?.find((q) => q.url)?.url ??
+      displayVideo?.qualities?.[0]?.url;
+    if (streamUrl) {
+      primeVideoStream(streamUrl);
+    }
+  }, [displayVideo?.cdnUrl, displayVideo?.qualities]);
 
   const handleVideoUpdated = (updated: Video) => {
     setEditedVideo(updated);

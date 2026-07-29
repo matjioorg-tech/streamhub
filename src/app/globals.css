@@ -112,3 +112,57 @@ body.video-pseudo-fullscreen header,
 body.video-pseudo-fullscreen nav[class*='fixed'][class*='bottom'] {
   display: none !important;
 }
+
+/* YouTube-style double-tap seek feedback */
+@keyframes seek-feedback-pop {
+  0% {
+    transform: scale(0.55);
+    opacity: 0;
+  }
+  18% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  72% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.06);
+    opacity: 0;
+  }
+}
+
+@keyframes seek-feedback-ripple {
+  0% {
+    transform: scale(0.65);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+}
+
+@keyframes seek-feedback-ring {
+  0% {
+    transform: scale(0.75);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+
+.seek-feedback-burst {
+  animation: seek-feedback-pop 0.75s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.seek-feedback-ripple {
+  animation: seek-feedback-ripple 0.75s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.seek-feedback-ring {
+  animation: seek-feedback-ring 0.75s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}

@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Play,
   Pause,
@@ -18,6 +17,20 @@ import {
 import type { Video, VideoQualityOption } from '@/lib/api/types';
 import { cn, formatDuration } from '@/lib/utils';
 import { pickAutoQualityOption } from '@/lib/video-quality';
+import { primeVideoStream } from '@/lib/video-cache';
+import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
+import {
+  DEFAULT_VIDEO_ZOOM,
+  applyFocalZoom,
+  formatZoomPercent,
+  getTouchCenter,
+  getTouchDistance,
+  clampPan,
+  snapVideoZoom,
+  type VideoZoomTransform,
+  VIDEO_ZOOM_MAX,
+  VIDEO_ZOOM_MIN,
+} from '@/lib/video-player-zoom';
 
 const SEEK_SECONDS = 10;
 const DOUBLE_TAP_MS = 320;
@@ -29,6 +42,8 @@ const SPEED_HOLD_RATE = 2;
 const SPEED_STEP = 0.5;
 const SPEED_SWIPE_PX = 48;
 const SPEED_HOLD_MS = 180;
+const SPEED_STEP_INDEXES = [0.5, 1, 1.5, 2] as const;
+const SPEED_HOLD_INDEX = SPEED_STEP_INDEXES.length - 1;
 const TAP_MOVE_THRESHOLD = 10;
 const HOLD_CANCEL_PX = 22;
 const TAP_SUPPRESS_MS = 350;
@@ -129,6 +144,38 @@ function isPortrait(): boolean {
   return window.matchMedia('(orientation: portrait)').matches;
 }
 
+function waitUntilCanPlay(el: HTMLVideoElement, timeoutMs = 20000): Promise<void> {
+  if (el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+    return Promise.resolve();
+  }
+
+  el.preload = 'auto';
+  if (el.networkState === HTMLMediaElement.NETWORK_EMPTY) {
+    el.load();
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('Video buffer timeout'));
+    }, timeoutMs);
+
+    const onReady = () => {
+      cleanup();
+      resolve();
+    };
+
+    const cleanup = () => {
+      window.clearTimeout(timer);
+      el.removeEventListener('canplay', onReady);
+      el.removeEventListener('loadeddata', onReady);
+    };
+
+    el.addEventListener('canplay', onReady, { once: true });
+    el.addEventListener('loadeddata', onReady, { once: true });
+  });
+}
+
 async function lockLandscape(): Promise<boolean> {
   try {
     const orientation = screen.orientation as ScreenOrientation & {
@@ -164,6 +211,11 @@ export function VideoPlayer({
     null,
   );
   const seekHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seekBurstRef = useRef({
+    direction: 'forward' as 'back' | 'forward',
+    seconds: SEEK_SECONDS,
+    burstAt: 0,
+  });
   const speedGestureRef = useRef({
     pointerId: -1,
     startX: 0,
@@ -193,7 +245,11 @@ export function VideoPlayer({
   const [bufferedEnd, setBufferedEnd] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [seekHint, setSeekHint] = useState<'back' | 'forward' | null>(null);
+  const [seekFeedback, setSeekFeedback] = useState<{
+    direction: 'back' | 'forward';
+    seconds: number;
+    animationKey: number;
+  } | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [isBuffering, setIsBuffering] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -207,6 +263,27 @@ export function VideoPlayer({
   const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
   const [showRotateHint, setShowRotateHint] = useState(false);
   const orientationLockedRef = useRef(false);
+  const resumeAfterFsRef = useRef(false);
+  const videoZoomRef = useRef<VideoZoomTransform>(DEFAULT_VIDEO_ZOOM);
+  const pinchBlocksGesturesRef = useRef(false);
+  const pinchGestureRef = useRef({
+    active: false,
+    panning: false,
+    startDistance: 0,
+    startScale: 1,
+    startX: 0,
+    startY: 0,
+    panStartX: 0,
+    panStartY: 0,
+    panOriginX: 0,
+    panOriginY: 0,
+  });
+  const zoomHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [videoZoom, setVideoZoom] = useState<VideoZoomTransform>(DEFAULT_VIDEO_ZOOM);
+  const [isPinching, setIsPinching] = useState(false);
+  const [showZoomHint, setShowZoomHint] = useState(false);
+  const [fsPortraitChromeBottom, setFsPortraitChromeBottom] = useState(0);
 
   const qualityOptions: VideoQualityOption[] = useMemo(() => {
     if (video.qualities?.length) {
@@ -247,6 +324,29 @@ export function VideoPlayer({
 
   const posterUrl = video.thumbnailUrl ?? video.posterUrl ?? undefined;
 
+  const zoomEnabled = isFullscreen || pseudoFullscreen || isMobileDevice();
+
+  const applyVideoZoom = useCallback((next: VideoZoomTransform) => {
+    videoZoomRef.current = next;
+    setVideoZoom(next);
+    if (Math.abs(next.scale - 1) > 0.02) {
+      setShowZoomHint(true);
+      if (zoomHintTimerRef.current) clearTimeout(zoomHintTimerRef.current);
+      zoomHintTimerRef.current = setTimeout(() => setShowZoomHint(false), 1200);
+    } else {
+      setShowZoomHint(false);
+    }
+  }, []);
+
+  const resetVideoZoom = useCallback(() => {
+    videoZoomRef.current = DEFAULT_VIDEO_ZOOM;
+    setVideoZoom(DEFAULT_VIDEO_ZOOM);
+    setShowZoomHint(false);
+    pinchGestureRef.current.active = false;
+    pinchGestureRef.current.panning = false;
+    pinchBlocksGesturesRef.current = false;
+  }, []);
+
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
@@ -269,9 +369,18 @@ export function VideoPlayer({
   }, []);
 
   const showSeekFeedback = useCallback((direction: 'back' | 'forward') => {
-    setSeekHint(direction);
+    const now = Date.now();
+    const burst = seekBurstRef.current;
+    const seconds =
+      burst.direction === direction && now - burst.burstAt < 900
+        ? burst.seconds + SEEK_SECONDS
+        : SEEK_SECONDS;
+
+    seekBurstRef.current = { direction, seconds, burstAt: now };
+    setSeekFeedback({ direction, seconds, animationKey: now });
+
     if (seekHintTimerRef.current) clearTimeout(seekHintTimerRef.current);
-    seekHintTimerRef.current = setTimeout(() => setSeekHint(null), 700);
+    seekHintTimerRef.current = setTimeout(() => setSeekFeedback(null), 750);
   }, []);
 
   const applyPlaybackRate = useCallback((rate: number) => {
@@ -301,9 +410,9 @@ export function VideoPlayer({
   }, []);
 
   const getSpeedSwipeThreshold = useCallback(() => {
-    if (isFullscreenRef.current) return 36;
+    if (isFullscreenRef.current) return 28;
     const width = containerRef.current?.getBoundingClientRect().width ?? window.innerWidth;
-    return Math.max(28, Math.min(50, width * 0.065));
+    return Math.max(24, Math.min(44, width * 0.055));
   }, []);
 
   const activateSpeedGesture = useCallback(
@@ -333,14 +442,14 @@ export function VideoPlayer({
       if (!g.active) return;
       const threshold = getSpeedSwipeThreshold();
       const deltaX = clientX - g.speedSwipeOriginX;
-      const steps =
-        deltaX >= 0
-          ? Math.floor(deltaX / threshold)
-          : Math.ceil(deltaX / threshold);
+      const steps = Math.round(deltaX / threshold);
       if (steps === g.lastStep) return;
       g.lastStep = steps;
-      const nextRate = snapSpeed(g.startRate + steps * SPEED_STEP);
-      flushPlaybackRate(nextRate);
+      const stepIndex = Math.max(
+        0,
+        Math.min(SPEED_STEP_INDEXES.length - 1, SPEED_HOLD_INDEX + steps),
+      );
+      flushPlaybackRate(SPEED_STEP_INDEXES[stepIndex]);
     },
     [flushPlaybackRate, getSpeedSwipeThreshold],
   );
@@ -390,10 +499,185 @@ export function VideoPlayer({
     documentGestureCleanupRef.current = null;
   }, []);
 
+  const updateSpeedFromPointerRef = useRef(updateSpeedFromPointer);
+  const endSpeedGestureRef = useRef(endSpeedGesture);
+  const cleanupDocumentGestureRef = useRef(cleanupDocumentGesture);
+
+  useEffect(() => {
+    updateSpeedFromPointerRef.current = updateSpeedFromPointer;
+    endSpeedGestureRef.current = endSpeedGesture;
+    cleanupDocumentGestureRef.current = cleanupDocumentGesture;
+  }, [updateSpeedFromPointer, endSpeedGesture, cleanupDocumentGesture]);
+
+  const finishSpeedTouchSession = useCallback(() => {
+    cleanupDocumentGestureRef.current();
+    setGestureActive(false);
+    endSpeedGestureRef.current();
+    try {
+      const layer = gestureLayerRef.current;
+      const pointerId = speedGestureRef.current.pointerId;
+      if (layer && pointerId >= 0 && layer.hasPointerCapture(pointerId)) {
+        layer.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // ignore
+    }
+    speedGestureRef.current.pointerId = -1;
+  }, []);
+
+  const handlePinchTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (!zoomEnabled || isScrubbingRef.current) return;
+
+      const pinch = pinchGestureRef.current;
+
+      if (e.touches.length === 2) {
+        pinchBlocksGesturesRef.current = true;
+        pinch.active = true;
+        pinch.panning = false;
+        pinch.startDistance = getTouchDistance(e.touches);
+        pinch.startScale = videoZoomRef.current.scale;
+        pinch.startX = videoZoomRef.current.x;
+        pinch.startY = videoZoomRef.current.y;
+        setIsPinching(true);
+        setGestureActive(true);
+        cleanupDocumentGesture();
+        endSpeedGesture();
+        if (speedGestureRef.current.holdTimer) {
+          clearTimeout(speedGestureRef.current.holdTimer);
+          speedGestureRef.current.holdTimer = null;
+        }
+        e.preventDefault();
+        return;
+      }
+
+      if (
+        e.touches.length === 1 &&
+        videoZoomRef.current.scale > VIDEO_ZOOM_MIN + 0.02 &&
+        !speedGestureRef.current.active &&
+        !speedGestureRef.current.holdTimer
+      ) {
+        pinch.panning = true;
+        pinch.panStartX = e.touches[0].clientX;
+        pinch.panStartY = e.touches[0].clientY;
+        pinch.panOriginX = videoZoomRef.current.x;
+        pinch.panOriginY = videoZoomRef.current.y;
+        setGestureActive(true);
+        pinchBlocksGesturesRef.current = true;
+      }
+    },
+    [cleanupDocumentGesture, endSpeedGesture, zoomEnabled],
+  );
+
+  const handlePinchTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      const speed = speedGestureRef.current;
+      if (speed.active && e.touches.length >= 1) {
+        e.preventDefault();
+        e.stopPropagation();
+        updateSpeedFromPointerRef.current(e.touches[0].clientX);
+        lastPointerRef.current.clientX = e.touches[0].clientX;
+        lastPointerRef.current.clientY = e.touches[0].clientY;
+        return;
+      }
+
+      if (!zoomEnabled) return;
+      const container = containerRef.current;
+      if (!container) return;
+
+      const pinch = pinchGestureRef.current;
+      const rect = container.getBoundingClientRect();
+
+      if (e.touches.length === 2 && pinch.active) {
+        e.preventDefault();
+        const distance = getTouchDistance(e.touches);
+        if (pinch.startDistance <= 0) return;
+
+        const center = getTouchCenter(e.touches);
+        const nextScale = pinch.startScale * (distance / pinch.startDistance);
+        const updated = applyFocalZoom(
+          rect,
+          pinch.startScale,
+          nextScale,
+          center.x,
+          center.y,
+          pinch.startX,
+          pinch.startY,
+        );
+        applyVideoZoom(updated);
+        return;
+      }
+
+      if (e.touches.length === 1 && pinch.panning && videoZoomRef.current.scale > 1) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - pinch.panStartX;
+        const dy = e.touches[0].clientY - pinch.panStartY;
+        const { x, y } = clampPan(
+          videoZoomRef.current.scale,
+          pinch.panOriginX + dx,
+          pinch.panOriginY + dy,
+          rect.width,
+          rect.height,
+        );
+        applyVideoZoom({ scale: videoZoomRef.current.scale, x, y });
+      }
+    },
+    [applyVideoZoom, zoomEnabled],
+  );
+
+  const handlePinchTouchEnd = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (speedGestureRef.current.active && e.touches.length === 0) {
+        e.preventDefault();
+        finishSpeedTouchSession();
+        return;
+      }
+
+      if (!zoomEnabled) return;
+
+      const pinch = pinchGestureRef.current;
+      const container = containerRef.current;
+
+      if (e.touches.length < 2) {
+        pinch.active = false;
+        setIsPinching(false);
+      }
+
+      if (e.touches.length === 0) {
+        pinch.panning = false;
+        pinchBlocksGesturesRef.current = false;
+        setGestureActive(false);
+
+        if (container) {
+          const rect = container.getBoundingClientRect();
+          applyVideoZoom(snapVideoZoom(videoZoomRef.current, rect.width, rect.height));
+        } else {
+          applyVideoZoom(snapVideoZoom(videoZoomRef.current, 1, 1));
+        }
+      } else if (e.touches.length === 1 && pinch.active) {
+        pinch.active = false;
+        setIsPinching(false);
+        pinch.panning = true;
+        pinch.panStartX = e.touches[0].clientX;
+        pinch.panStartY = e.touches[0].clientY;
+        pinch.panOriginX = videoZoomRef.current.x;
+        pinch.panOriginY = videoZoomRef.current.y;
+      }
+    },
+    [applyVideoZoom, finishSpeedTouchSession, zoomEnabled],
+  );
+
   const handleGesturePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (isScrubbingRef.current) return;
+      if (pinchBlocksGesturesRef.current || pinchGestureRef.current.active) return;
+      if (
+        e.pointerType === 'touch' &&
+        videoZoomRef.current.scale > VIDEO_ZOOM_MIN + 0.02
+      ) {
+        return;
+      }
 
       cleanupDocumentGesture();
 
@@ -433,7 +717,7 @@ export function VideoPlayer({
 
       const processMove = (clientX: number, clientY: number, preventDefault?: () => void) => {
         const gesture = speedGestureRef.current;
-        if (gesture.pointerId !== pointerId) return;
+        if (!gesture.active && gesture.pointerId !== pointerId) return;
 
         const point = getPointerLocal(clientX, clientY);
         lastPointerRef.current = {
@@ -469,12 +753,12 @@ export function VideoPlayer({
       };
 
       const processEnd = (clientX: number, clientY: number) => {
-        if (speedGestureRef.current.pointerId !== pointerId) return;
+        const gesture = speedGestureRef.current;
+        if (gesture.pointerId !== pointerId && !gesture.active) return;
 
         cleanupDocumentGesture();
         setGestureActive(false);
 
-        const gesture = speedGestureRef.current;
         const wasSpeedActive = gesture.active;
         endSpeedGesture();
 
@@ -532,6 +816,11 @@ export function VideoPlayer({
       };
 
       const onTouchMove = (ev: TouchEvent) => {
+        const gesture = speedGestureRef.current;
+        if (gesture.active && ev.touches.length >= 1) {
+          processMove(ev.touches[0].clientX, ev.touches[0].clientY, () => ev.preventDefault());
+          return;
+        }
         if (usedPointerEvents) return;
         const touch =
           Array.from(ev.touches).find((t) => t.identifier === pointerId) ??
@@ -541,6 +830,14 @@ export function VideoPlayer({
       };
 
       const onTouchEnd = (ev: TouchEvent) => {
+        const gesture = speedGestureRef.current;
+        if (gesture.active && ev.touches.length === 0) {
+          const touch =
+            Array.from(ev.changedTouches).find((t) => t.identifier === pointerId) ??
+            ev.changedTouches[0];
+          if (touch) processEnd(touch.clientX, touch.clientY);
+          return;
+        }
         if (usedPointerEvents) return;
         const touch =
           Array.from(ev.changedTouches).find((t) => t.identifier === pointerId) ??
@@ -549,19 +846,20 @@ export function VideoPlayer({
         processEnd(touch.clientX, touch.clientY);
       };
 
-      document.addEventListener('pointermove', onDocMove, { passive: false });
-      document.addEventListener('pointerup', onDocEnd);
-      document.addEventListener('pointercancel', onDocEnd);
-      document.addEventListener('touchmove', onTouchMove, { passive: false });
-      document.addEventListener('touchend', onTouchEnd);
-      document.addEventListener('touchcancel', onTouchEnd);
+      const listenerOpts = { passive: false, capture: true } as const;
+      window.addEventListener('pointermove', onDocMove, listenerOpts);
+      window.addEventListener('pointerup', onDocEnd, listenerOpts);
+      window.addEventListener('pointercancel', onDocEnd, listenerOpts);
+      window.addEventListener('touchmove', onTouchMove, listenerOpts);
+      window.addEventListener('touchend', onTouchEnd, listenerOpts);
+      window.addEventListener('touchcancel', onTouchEnd, listenerOpts);
       documentGestureCleanupRef.current = () => {
-        document.removeEventListener('pointermove', onDocMove);
-        document.removeEventListener('pointerup', onDocEnd);
-        document.removeEventListener('pointercancel', onDocEnd);
-        document.removeEventListener('touchmove', onTouchMove);
-        document.removeEventListener('touchend', onTouchEnd);
-        document.removeEventListener('touchcancel', onTouchEnd);
+        window.removeEventListener('pointermove', onDocMove, listenerOpts);
+        window.removeEventListener('pointerup', onDocEnd, listenerOpts);
+        window.removeEventListener('pointercancel', onDocEnd, listenerOpts);
+        window.removeEventListener('touchmove', onTouchMove, listenerOpts);
+        window.removeEventListener('touchend', onTouchEnd, listenerOpts);
+        window.removeEventListener('touchcancel', onTouchEnd, listenerOpts);
       };
     },
     [
@@ -581,43 +879,67 @@ export function VideoPlayer({
 
     setPlaybackError(null);
     setIsStarting(true);
-
-    if (el.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
-      el.preload = 'auto';
-    }
+    setIsBuffering(el.readyState < HTMLMediaElement.HAVE_FUTURE_DATA);
 
     try {
+      await waitUntilCanPlay(el);
       await el.play();
       pendingPlayRef.current = false;
       setIsBuffering(false);
       setIsStarting(false);
     } catch (err) {
       const domError = err as DOMException;
-      if (domError.name === 'AbortError') {
+      if (domError?.name === 'AbortError') {
         return;
       }
 
-      // Not enough data yet — wait for the browser to buffer, then retry.
       pendingPlayRef.current = true;
       setIsBuffering(true);
 
       const retry = () => {
         if (!pendingPlayRef.current) return;
-        void el.play()
+        void el
+          .play()
           .then(() => {
             pendingPlayRef.current = false;
             setIsBuffering(false);
             setIsStarting(false);
           })
           .catch(() => {
-            // Still loading — onCanPlay / onPlaying will retry again.
+            // onCanPlay / onPlaying will retry again.
           });
       };
 
       el.addEventListener('canplay', retry, { once: true });
+      el.addEventListener('canplaythrough', retry, { once: true });
       el.addEventListener('loadeddata', retry, { once: true });
     }
   }, []);
+
+  const resumePlaybackIfNeeded = useCallback(() => {
+    const el = videoRef.current;
+    if (!el || !resumeAfterFsRef.current) return;
+    resumeAfterFsRef.current = false;
+    requestAnimationFrame(() => {
+      if (!el.paused) {
+        setPlaying(true);
+        return;
+      }
+      void el
+        .play()
+        .then(() => {
+          setPlaying(true);
+          setIsBuffering(false);
+          setIsStarting(false);
+        })
+        .catch(() => undefined);
+    });
+  }, []);
+
+  const capturePlaybackForFullscreen = useCallback(() => {
+    const el = videoRef.current;
+    resumeAfterFsRef.current = el ? !el.paused : playing;
+  }, [playing]);
 
   const togglePlay = useCallback(() => {
     const el = videoRef.current;
@@ -660,6 +982,7 @@ export function VideoPlayer({
   }, [cleanupDocumentGesture]);
 
   const enterPseudoFullscreen = useCallback(() => {
+    capturePlaybackForFullscreen();
     setPseudoFullscreen(true);
     setIsFullscreen(true);
     document.body.classList.add('video-fullscreen', 'video-pseudo-fullscreen');
@@ -667,9 +990,12 @@ export function VideoPlayer({
     if (isMobileDevice()) {
       void lockLandscape().then((locked) => {
         orientationLockedRef.current = locked;
+        resumePlaybackIfNeeded();
       });
+    } else {
+      resumePlaybackIfNeeded();
     }
-  }, []);
+  }, [capturePlaybackForFullscreen, resumePlaybackIfNeeded]);
 
   /** iOS Safari requires a synchronous call from click — no await before webkitEnterFullscreen */
   const enterIosNativeFullscreen = useCallback(() => {
@@ -677,6 +1003,7 @@ export function VideoPlayer({
     if (!el?.webkitEnterFullscreen) return false;
 
     try {
+      capturePlaybackForFullscreen();
       if (el.paused) {
         void el.play().catch(() => undefined);
       }
@@ -687,7 +1014,7 @@ export function VideoPlayer({
     } catch {
       return false;
     }
-  }, []);
+  }, [capturePlaybackForFullscreen]);
 
   const enterFullscreenWithLandscape = useCallback(() => {
     if (isIosDevice()) {
@@ -700,6 +1027,9 @@ export function VideoPlayer({
       const el = videoRef.current as WebKitVideoElement | null;
       if (!container || !el) return;
 
+      const wasPlaying = !el.paused;
+      capturePlaybackForFullscreen();
+
       try {
         await requestElementFullscreen(container);
         setIsFullscreen(true);
@@ -709,12 +1039,14 @@ export function VideoPlayer({
           const locked = await lockLandscape();
           orientationLockedRef.current = locked;
         }
+
+        if (wasPlaying) resumePlaybackIfNeeded();
       } catch {
         if (el.webkitEnterFullscreen && enterIosNativeFullscreen()) return;
         enterPseudoFullscreen();
       }
     })();
-  }, [enterIosNativeFullscreen, enterPseudoFullscreen]);
+  }, [capturePlaybackForFullscreen, enterIosNativeFullscreen, enterPseudoFullscreen, resumePlaybackIfNeeded]);
 
   const toggleFullscreen = useCallback(async () => {
     const el = videoRef.current as WebKitVideoElement | null;
@@ -845,6 +1177,58 @@ export function VideoPlayer({
     [],
   );
 
+  const updateFsPortraitChromeInset = useCallback(() => {
+    if (!isFullscreenRef.current || !isPortrait()) {
+      setFsPortraitChromeBottom(0);
+      return;
+    }
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const vw = videoRef.current?.videoWidth || video.width || 16;
+    const vh = videoRef.current?.videoHeight || video.height || 9;
+    if (!vw || !vh) return;
+
+    const scale = Math.min(rect.width / vw, rect.height / vh);
+    const displayedHeight = vh * scale;
+    const letterbox = Math.max(0, (rect.height - displayedHeight) / 2);
+    setFsPortraitChromeBottom(Math.round(letterbox));
+  }, [video.height, video.width]);
+
+  useEffect(() => {
+    updateFsPortraitChromeInset();
+
+    window.addEventListener('resize', updateFsPortraitChromeInset);
+    window.addEventListener('orientationchange', updateFsPortraitChromeInset);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', updateFsPortraitChromeInset);
+    }
+
+    const el = videoRef.current;
+    el?.addEventListener('loadedmetadata', updateFsPortraitChromeInset);
+
+    return () => {
+      window.removeEventListener('resize', updateFsPortraitChromeInset);
+      window.removeEventListener('orientationchange', updateFsPortraitChromeInset);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', updateFsPortraitChromeInset);
+      }
+      el?.removeEventListener('loadedmetadata', updateFsPortraitChromeInset);
+    };
+  }, [
+    activeSourceUrl,
+    isFullscreen,
+    pseudoFullscreen,
+    updateFsPortraitChromeInset,
+  ]);
+
+  useEffect(() => {
+    if (!pseudoFullscreen) return;
+    resumePlaybackIfNeeded();
+  }, [pseudoFullscreen, resumePlaybackIfNeeded]);
+
   useEffect(() => {
     if (!pseudoFullscreen) {
       setShowRotateHint(false);
@@ -901,12 +1285,14 @@ export function VideoPlayer({
       const isFs = !!document.fullscreenElement;
       setIsFullscreen(isFs || pseudoFullscreen);
       document.body.classList.toggle('video-fullscreen', isFs || pseudoFullscreen);
-      if (isFs && isMobileDevice()) {
-        void lockLandscape().then((locked) => {
-          orientationLockedRef.current = locked;
-        });
-      }
-      if (!isFs && !pseudoFullscreen) {
+      if (isFs) {
+        resumePlaybackIfNeeded();
+        if (isMobileDevice()) {
+          void lockLandscape().then((locked) => {
+            orientationLockedRef.current = locked;
+          });
+        }
+      } else if (!pseudoFullscreen) {
         if (orientationLockedRef.current) {
           void unlockLandscape();
           orientationLockedRef.current = false;
@@ -951,13 +1337,8 @@ export function VideoPlayer({
       }
       el?.removeEventListener('webkitbeginfullscreen', onWebkitBegin);
       el?.removeEventListener('webkitendfullscreen', onWebkitEnd);
-      document.body.classList.remove('video-fullscreen', 'video-pseudo-fullscreen');
-      if (orientationLockedRef.current) {
-        void unlockLandscape();
-        orientationLockedRef.current = false;
-      }
     };
-  }, [activeSourceUrl, pseudoFullscreen]);
+  }, [activeSourceUrl, pseudoFullscreen, resumePlaybackIfNeeded]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1029,6 +1410,22 @@ export function VideoPlayer({
   }, [playing, showControls, scheduleHideControls, clearHideTimer]);
 
   useEffect(() => {
+    if (!isFullscreen && !pseudoFullscreen) {
+      resetVideoZoom();
+    }
+  }, [isFullscreen, pseudoFullscreen, resetVideoZoom]);
+
+  useEffect(() => {
+    resetVideoZoom();
+  }, [activeSourceUrl, resetVideoZoom]);
+
+  useEffect(() => {
+    return () => {
+      if (zoomHintTimerRef.current) clearTimeout(zoomHintTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     pendingPlayRef.current = false;
     setPlaybackError(null);
     setIsBuffering(false);
@@ -1036,12 +1433,23 @@ export function VideoPlayer({
     flushPlaybackRate(SPEED_DEFAULT);
     setShowSpeedOverlay(false);
 
+    if (!activeSourceUrl) return;
+
+    primeVideoStream(activeSourceUrl);
+
     const el = videoRef.current;
-    if (!el || !activeSourceUrl) return;
-    if (el.getAttribute('src') === activeSourceUrl) return;
-    el.src = activeSourceUrl;
-    el.preload = 'metadata';
-    el.load();
+    if (!el) return;
+
+    const srcChanged = el.getAttribute('src') !== activeSourceUrl;
+    if (srcChanged) {
+      el.src = activeSourceUrl;
+    }
+
+    el.preload = 'auto';
+
+    if (srcChanged || el.readyState === HTMLMediaElement.HAVE_NOTHING) {
+      el.load();
+    }
   }, [activeSourceUrl, flushPlaybackRate]);
 
   // Clear stuck loading state if playback never starts.
@@ -1074,6 +1482,8 @@ export function VideoPlayer({
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const buffered = duration > 0 ? (bufferedEnd / duration) * 100 : 0;
   const controlsVisible = showControls || !playing;
+  const inFullscreen = isFullscreen || pseudoFullscreen;
+  const liftChromeInPortraitFs = inFullscreen && fsPortraitChromeBottom > 0;
 
   const playerMarkup = (
     <div
@@ -1087,72 +1497,89 @@ export function VideoPlayer({
         gestureActive && 'touch-none',
       )}
     >
-      <video
-        ref={videoRef}
-        src={activeSourceUrl}
-        className={cn(
-          'pointer-events-none absolute inset-0 h-full w-full',
-          isFullscreen || pseudoFullscreen ? 'object-contain' : 'object-cover sm:object-contain',
-        )}
-        playsInline
-        preload="metadata"
-        poster={posterUrl}
-        onPlay={() => {
-          setPlaying(true);
-          setIsBuffering(false);
-          setIsStarting(false);
-          setPlaybackError(null);
-          pendingPlayRef.current = false;
-        }}
-        onPause={() => setPlaying(false)}
-        onCanPlay={() => {
-          if (pendingPlayRef.current) {
-            void attemptPlay();
-          }
-        }}
-        onCanPlayThrough={() => {
-          if (pendingPlayRef.current) {
-            void attemptPlay();
-          }
-        }}
-        onWaiting={() => {
-          if (!videoRef.current?.paused) {
-            setIsBuffering(true);
-          }
-        }}
-        onPlaying={() => {
-          setIsBuffering(false);
-          setIsStarting(false);
-          pendingPlayRef.current = false;
-        }}
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-        onTimeUpdate={(e) => {
-          if (!isScrubbingRef.current) {
-            setCurrentTime(e.currentTarget.currentTime);
-            onProgress?.(e.currentTarget.currentTime);
-          }
-        }}
-        onProgress={(e) => {
-          const el = e.currentTarget;
-          if (el.buffered.length > 0) {
-            setBufferedEnd(el.buffered.end(el.buffered.length - 1));
-          }
-        }}
-        onError={() => {
-          setIsBuffering(false);
-          setIsStarting(false);
-          pendingPlayRef.current = false;
-          setPlaybackError('Unable to play this video. Check your connection and try again.');
-        }}
-      />
+      <div className="absolute inset-0 overflow-hidden">
+        <div
+          className="h-full w-full will-change-transform"
+          style={{
+            transform: `translate3d(${videoZoom.x}px, ${videoZoom.y}px, 0) scale(${videoZoom.scale})`,
+            transformOrigin: 'center center',
+            transition: isPinching ? undefined : 'transform 0.18s ease-out',
+          }}
+        >
+          <video
+            ref={videoRef}
+            src={activeSourceUrl}
+            className={cn(
+              'pointer-events-none h-full w-full',
+              zoomEnabled || isFullscreen || pseudoFullscreen
+                ? 'object-contain'
+                : 'object-cover sm:object-contain',
+            )}
+            playsInline
+            preload="auto"
+            poster={posterUrl}
+            onPlay={() => {
+              setPlaying(true);
+              setIsBuffering(false);
+              setIsStarting(false);
+              setPlaybackError(null);
+              pendingPlayRef.current = false;
+            }}
+            onPause={() => setPlaying(false)}
+            onCanPlay={() => {
+              if (pendingPlayRef.current) {
+                void attemptPlay();
+              }
+            }}
+            onCanPlayThrough={() => {
+              if (pendingPlayRef.current) {
+                void attemptPlay();
+              }
+            }}
+            onWaiting={() => {
+              if (!videoRef.current?.paused) {
+                setIsBuffering(true);
+              }
+            }}
+            onPlaying={() => {
+              setIsBuffering(false);
+              setIsStarting(false);
+              pendingPlayRef.current = false;
+            }}
+            onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+            onTimeUpdate={(e) => {
+              if (!isScrubbingRef.current) {
+                setCurrentTime(e.currentTarget.currentTime);
+                onProgress?.(e.currentTarget.currentTime);
+              }
+            }}
+            onProgress={(e) => {
+              const el = e.currentTarget;
+              if (el.buffered.length > 0) {
+                setBufferedEnd(el.buffered.end(el.buffered.length - 1));
+              }
+            }}
+            onError={() => {
+              setIsBuffering(false);
+              setIsStarting(false);
+              pendingPlayRef.current = false;
+              setPlaybackError('Unable to play this video. Check your connection and try again.');
+            }}
+          />
+        </div>
+      </div>
 
       {/* Full-area gesture capture — receives touches in chrome gaps via pointer-events-none on controls */}
       <div
         ref={gestureLayerRef}
         className={cn(
-          'absolute inset-0 z-10',
-          isFullscreen || pseudoFullscreen ? 'touch-none' : 'touch-manipulation',
+          'absolute inset-0 z-40',
+          zoomEnabled || isFullscreen || pseudoFullscreen ? 'touch-none' : 'touch-manipulation',
         )}
+        onTouchStart={handlePinchTouchStart}
+        onTouchMove={handlePinchTouchMove}
+        onTouchEnd={handlePinchTouchEnd}
+        onTouchCancel={handlePinchTouchEnd}
         onPointerDown={handleGesturePointerDown}
         onPointerCancel={() => {
           cleanupDocumentGesture();
@@ -1215,21 +1642,26 @@ export function VideoPlayer({
         </div>
       </div>
 
-      {seekHint && (
-        <div
-          className={cn(
-            'pointer-events-none absolute top-1/2 z-20 -translate-y-1/2 rounded-md bg-black/55 px-2.5 py-1.5 text-xs font-semibold text-white',
-            seekHint === 'back' ? 'left-3' : 'right-3',
-          )}
-        >
-          {seekHint === 'back' ? `−${SEEK_SECONDS}s` : `+${SEEK_SECONDS}s`}
-        </div>
+      {seekFeedback && (
+        <SeekFeedbackOverlay
+          direction={seekFeedback.direction}
+          seconds={seekFeedback.seconds}
+          animationKey={seekFeedback.animationKey}
+        />
       )}
 
       {showSpeedOverlay && (
         <div className="pointer-events-none absolute inset-x-0 top-10 z-30 flex justify-center">
           <p className="rounded-md bg-black/55 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white">
             {formatPlaybackRate(playbackRate)}
+          </p>
+        </div>
+      )}
+
+      {showZoomHint && Math.abs(videoZoom.scale - 1) > 0.02 && (
+        <div className="pointer-events-none absolute inset-x-0 top-10 z-30 flex justify-center">
+          <p className="rounded-md bg-black/55 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white">
+            {formatZoomPercent(videoZoom.scale)}
           </p>
         </div>
       )}
@@ -1260,9 +1692,10 @@ export function VideoPlayer({
       {/* Bottom chrome — pointer-events-none so gestures pass through; buttons stay interactive */}
       <div
         className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 z-20 transition-opacity duration-200',
+          'pointer-events-none absolute inset-x-0 z-20 transition-[opacity,bottom] duration-200',
           controlsVisible ? 'opacity-100' : 'opacity-0',
         )}
+        style={liftChromeInPortraitFs ? { bottom: fsPortraitChromeBottom } : undefined}
       >
         <div className="bg-gradient-to-t from-black/90 via-black/50 to-transparent px-2 pt-4 pb-0 sm:px-3 sm:pt-5">
           <div className="flex items-center gap-0.5 sm:gap-1">
@@ -1413,8 +1846,10 @@ export function VideoPlayer({
           data-progress
           className={cn(
             'pointer-events-auto relative w-full cursor-pointer touch-none',
-            isFullscreen || pseudoFullscreen
-              ? 'h-5 pb-[env(safe-area-inset-bottom)]'
+            inFullscreen
+              ? liftChromeInPortraitFs
+                ? 'h-4 pb-1'
+                : 'h-5 pb-[max(0.25rem,env(safe-area-inset-bottom))]'
               : 'h-3.5',
           )}
           onPointerDown={(e) => {
@@ -1462,17 +1897,12 @@ export function VideoPlayer({
     </div>
   );
 
-  if (pseudoFullscreen && typeof document !== 'undefined') {
-    return (
-      <>
-        <div
-          className="h-[56.25vw] w-full bg-black sm:aspect-video sm:h-auto"
-          aria-hidden
-        />
-        {createPortal(playerMarkup, document.body)}
-      </>
-    );
-  }
-
-  return playerMarkup;
+  return (
+    <>
+      {pseudoFullscreen && (
+        <div className="aspect-video w-full bg-black sm:rounded-xl" aria-hidden />
+      )}
+      {playerMarkup}
+    </>
+  );
 }
