@@ -5,7 +5,7 @@ import { useAdminVideos } from '@/hooks/use-admin';
 import { adminApi } from '@/lib/api';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AdminVideoEditButton } from '@/components/admin/admin-video-edit-button';
-import { cn } from '@/lib/utils';
+import { cn, formatDateTime } from '@/lib/utils';
 
 type DeleteRequest =
   | { type: 'one'; id: string; title: string }
@@ -168,6 +168,9 @@ export default function AdminVideosPage() {
                       </span>
                       <span className="text-zinc-400">{video.views} views</span>
                     </div>
+                    <p className="mt-1.5 text-xs text-zinc-500">
+                      Uploaded {formatDateTime(video.createdAt)}
+                    </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <AdminVideoEditButton
                         video={video}
@@ -224,6 +227,7 @@ export default function AdminVideosPage() {
                   </th>
                   <th className="p-3">Title</th>
                   <th className="p-3">Status</th>
+                  <th className="p-3">Uploaded</th>
                   <th className="p-3">Views</th>
                   <th className="p-3">Actions</th>
                 </tr>
@@ -248,6 +252,9 @@ export default function AdminVideosPage() {
                     <td className="max-w-[280px] truncate p-3 font-medium">{video.title}</td>
                     <td className="p-3">
                       <span className="rounded bg-zinc-800 px-2 py-1 text-xs">{video.status}</span>
+                    </td>
+                    <td className="whitespace-nowrap p-3 text-zinc-400">
+                      {formatDateTime(video.createdAt)}
                     </td>
                     <td className="p-3">{video.views}</td>
                     <td className="space-x-2 p-3">
