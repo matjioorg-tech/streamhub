@@ -11,13 +11,15 @@ import {
   Settings,
   Check,
   AlertCircle,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import type { Video, VideoQualityOption } from '@/lib/api/types';
 import { cn, formatDuration } from '@/lib/utils';
 import { pickAutoQualityOption } from '@/lib/video-quality';
 import { primeVideoStream } from '@/lib/video-cache';
 import { takeVideoAutoplayIntent } from '@/lib/video-autoplay';
-import { SeekFeedbackOverlay, SeekDirectionIcon } from '@/components/video/seek-feedback-overlay';
+import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
 import {
   DEFAULT_VIDEO_ZOOM,
   applyPinchCenterZoom,
@@ -1707,6 +1709,7 @@ export function VideoPlayer({
   const liftChromeInPortraitFs = pseudoFullscreen && fsPortraitChromeBottom > 0;
   const progressBarVisible = controlsVisible || isScrubbing;
   const fsChromeBottomPx = liftChromeInPortraitFs ? fsPortraitChromeBottom : 0;
+  const mobilePlayer = isMobileDevice() && !inFullscreen;
 
   const playerMarkup = (
     <div
@@ -1930,6 +1933,7 @@ export function VideoPlayer({
         className={cn(
           'player-fs-chrome pointer-events-none absolute inset-x-0 bottom-0 z-20',
           inFullscreen && isMobileDevice() && 'player-fs-chrome-mobile',
+          mobilePlayer && 'pb-1',
         )}
         style={
           fsChromeBottomPx > 0
@@ -1964,7 +1968,7 @@ export function VideoPlayer({
               className="pointer-events-auto hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
               aria-label={`Rewind ${SEEK_SECONDS} seconds`}
             >
-              <SeekDirectionIcon direction="back" seconds={SEEK_SECONDS} className="h-6 w-6" />
+              <ChevronsLeft className="h-5 w-5 stroke-[2.5]" strokeLinecap="round" strokeLinejoin="round" />
             </button>
 
             <button
@@ -1973,7 +1977,7 @@ export function VideoPlayer({
               className="pointer-events-auto hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
               aria-label={`Forward ${SEEK_SECONDS} seconds`}
             >
-              <SeekDirectionIcon direction="forward" seconds={SEEK_SECONDS} className="h-6 w-6" />
+              <ChevronsRight className="h-5 w-5 stroke-[2.5]" strokeLinecap="round" strokeLinejoin="round" />
             </button>
 
             <span className="ml-1 text-[11px] tabular-nums text-white/80 sm:text-xs">
@@ -2092,8 +2096,8 @@ export function VideoPlayer({
         <div
           data-progress
           className={cn(
-            'pointer-events-auto relative w-full cursor-pointer touch-none transition-opacity duration-200',
-            inFullscreen ? 'h-7' : 'h-3.5',
+            'pointer-events-auto relative flex w-full cursor-pointer touch-none items-center transition-opacity duration-200',
+            inFullscreen ? 'h-9' : mobilePlayer ? 'h-11 px-1' : 'h-5',
             progressBarVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
           onPointerDown={(e) => {
@@ -2117,8 +2121,8 @@ export function VideoPlayer({
         >
           <div
             className={cn(
-              'absolute inset-x-3 bottom-0 overflow-hidden rounded-full bg-white/30 sm:inset-x-4',
-              inFullscreen ? 'h-1' : 'h-[2px]',
+              'relative w-full overflow-hidden rounded-full bg-white/30',
+              inFullscreen ? 'mx-3 h-1.5 sm:mx-4' : mobilePlayer ? 'mx-2 h-1.5' : 'mx-3 h-[3px] sm:mx-4',
             )}
           >
             <div
@@ -2132,7 +2136,8 @@ export function VideoPlayer({
           </div>
           <div
             className={cn(
-              'absolute bottom-0 h-3 w-3 -translate-x-1/2 translate-y-1/2 rounded-full bg-red-500 shadow-md transition-opacity',
+              'absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500 shadow-md transition-opacity',
+              mobilePlayer ? 'h-[18px] w-[18px]' : inFullscreen ? 'h-4 w-4' : 'h-3.5 w-3.5',
               progressBarVisible || isScrubbing ? 'opacity-100' : 'opacity-0',
               isScrubbing && 'scale-125',
             )}

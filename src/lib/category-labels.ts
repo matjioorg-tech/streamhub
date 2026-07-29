@@ -1,6 +1,6 @@
 export const SUBCATEGORY_LABELS: Record<string, string> = {
-  'Education & Courses': 'Creator',
-  'Programming & Tech': 'Creator',
+  Education: 'Creator',
+  Course: 'Creator',
   'Music & Podcast': 'Creator',
   Entertainment: 'Creator',
   Lifestyle: 'Creator',
@@ -18,8 +18,8 @@ export function getSubCategoryLabel(categoryName: string | null | undefined): st
 }
 
 export const CATEGORY_ACCENTS: Record<string, string> = {
-  'Education & Courses': 'from-blue-600/20 to-indigo-600/10',
-  'Programming & Tech': 'from-violet-600/20 to-purple-600/10',
+  Education: 'from-blue-600/20 to-indigo-600/10',
+  Course: 'from-violet-600/20 to-purple-600/10',
   'Movies & Series': 'from-rose-600/20 to-pink-600/10',
   Gaming: 'from-emerald-600/20 to-green-600/10',
   'Music & Podcast': 'from-amber-600/20 to-orange-600/10',
