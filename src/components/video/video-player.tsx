@@ -22,6 +22,7 @@ import { takeVideoAutoplayIntent } from '@/lib/video-autoplay';
 import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
 import {
   DEFAULT_VIDEO_ZOOM,
+  applyIncrementalFocalZoom,
   applyFocalZoom,
   computeContainedVideoSize,
   formatZoomPercent,
@@ -306,10 +307,10 @@ export function VideoPlayer({
   const pinchGestureRef = useRef({
     active: false,
     panning: false,
-    startDistance: 0,
-    startScale: 1,
-    startX: 0,
-    startY: 0,
+    lastDistance: 0,
+    lastScale: 1,
+    lastX: 0,
+    lastY: 0,
     panStartX: 0,
     panStartY: 0,
     panOriginX: 0,
@@ -317,8 +318,6 @@ export function VideoPlayer({
   });
   const zoomHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const centerTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingZoomRef = useRef<VideoZoomTransform | null>(null);
-  const zoomRafRef = useRef<number | null>(null);
 
   const [videoZoom, setVideoZoom] = useState<VideoZoomTransform>(DEFAULT_VIDEO_ZOOM);
   const [isPinching, setIsPinching] = useState(false);
@@ -380,21 +379,6 @@ export function VideoPlayer({
     }
   }, []);
 
-  const scheduleVideoZoom = useCallback(
-    (next: VideoZoomTransform) => {
-      pendingZoomRef.current = next;
-      if (zoomRafRef.current !== null) return;
-      zoomRafRef.current = requestAnimationFrame(() => {
-        zoomRafRef.current = null;
-        if (pendingZoomRef.current) {
-          applyVideoZoom(pendingZoomRef.current);
-          pendingZoomRef.current = null;
-        }
-      });
-    },
-    [applyVideoZoom],
-  );
-
   const resetVideoZoom = useCallback(() => {
     videoZoomRef.current = DEFAULT_VIDEO_ZOOM;
     setVideoZoom(DEFAULT_VIDEO_ZOOM);
@@ -402,9 +386,10 @@ export function VideoPlayer({
     pinchGestureRef.current.active = false;
     pinchGestureRef.current.panning = false;
     pinchBlocksGesturesRef.current = false;
-    pinchGestureRef.current.startX = 0;
-    pinchGestureRef.current.startY = 0;
-    pinchGestureRef.current.startScale = 1;
+    pinchGestureRef.current.lastDistance = 0;
+    pinchGestureRef.current.lastScale = 1;
+    pinchGestureRef.current.lastX = 0;
+    pinchGestureRef.current.lastY = 0;
   }, []);
 
   const syncZoomContentSize = useCallback(() => {
@@ -605,13 +590,17 @@ export function VideoPlayer({
       const pinch = pinchGestureRef.current;
 
       if (e.touches.length === 2) {
+        syncZoomContentSize();
+        const distance = getTouchDistance(e.touches);
+        if (distance <= 0) return;
+
         pinchBlocksGesturesRef.current = true;
         pinch.active = true;
         pinch.panning = false;
-        pinch.startDistance = getTouchDistance(e.touches);
-        pinch.startScale = videoZoomRef.current.scale;
-        pinch.startX = videoZoomRef.current.x;
-        pinch.startY = videoZoomRef.current.y;
+        pinch.lastDistance = distance;
+        pinch.lastScale = videoZoomRef.current.scale;
+        pinch.lastX = videoZoomRef.current.x;
+        pinch.lastY = videoZoomRef.current.y;
         setIsPinching(true);
         setGestureActive(true);
         cleanupDocumentGesture();
@@ -637,7 +626,7 @@ export function VideoPlayer({
         pinch.panOriginY = videoZoomRef.current.y;
       }
     },
-    [cleanupDocumentGesture, endSpeedGesture, zoomEnabled],
+    [cleanupDocumentGesture, endSpeedGesture, syncZoomContentSize, zoomEnabled],
   );
 
   const handlePinchTouchMove = useCallback(
@@ -663,23 +652,25 @@ export function VideoPlayer({
       if (e.touches.length === 2 && pinch.active) {
         e.preventDefault();
         const distance = getTouchDistance(e.touches);
-        if (pinch.startDistance <= 0) return;
+        if (pinch.lastDistance <= 0 || distance <= 0) return;
 
         const rect = container.getBoundingClientRect();
         const center = getTouchCenter(e.touches);
-        const nextScale = pinch.startScale * (distance / pinch.startDistance);
-        const updated = applyFocalZoom(
-          rect,
-          pinch.startScale,
+        const nextScale = pinch.lastScale * (distance / pinch.lastDistance);
+        const updated = applyIncrementalFocalZoom(
+          { scale: pinch.lastScale, x: pinch.lastX, y: pinch.lastY },
           nextScale,
           center.x,
           center.y,
-          pinch.startX,
-          pinch.startY,
+          rect,
           width,
           height,
         );
-        scheduleVideoZoom(updated);
+        applyVideoZoom(updated);
+        pinch.lastDistance = distance;
+        pinch.lastScale = updated.scale;
+        pinch.lastX = updated.x;
+        pinch.lastY = updated.y;
         return;
       }
 
@@ -708,7 +699,7 @@ export function VideoPlayer({
         applyVideoZoom({ scale: videoZoomRef.current.scale, x, y });
       }
     },
-    [applyVideoZoom, scheduleVideoZoom, zoomEnabled],
+    [applyVideoZoom, zoomEnabled, video.height, video.width],
   );
 
   const handlePinchTouchEnd = useCallback(
@@ -733,15 +724,6 @@ export function VideoPlayer({
         pinch.panning = false;
         pinchBlocksGesturesRef.current = false;
         setGestureActive(false);
-
-        if (zoomRafRef.current !== null) {
-          cancelAnimationFrame(zoomRafRef.current);
-          zoomRafRef.current = null;
-        }
-        if (pendingZoomRef.current) {
-          applyVideoZoom(pendingZoomRef.current);
-          pendingZoomRef.current = null;
-        }
 
         if (container) {
           const { width, height } = getZoomContentSize(
@@ -1698,7 +1680,6 @@ export function VideoPlayer({
       clearHideTimer();
       if (seekHintTimerRef.current) clearTimeout(seekHintTimerRef.current);
       if (centerTapTimerRef.current) clearTimeout(centerTapTimerRef.current);
-      if (zoomRafRef.current !== null) cancelAnimationFrame(zoomRafRef.current);
       const g = speedGestureRef.current;
       if (g.holdTimer) clearTimeout(g.holdTimer);
     };
@@ -1813,15 +1794,15 @@ export function VideoPlayer({
         <div
           className={cn(
             'shrink-0 will-change-transform',
-            !(inFullscreen && zoomContentSize.width > 0) && 'h-full w-full',
+            !(inFullscreen && zoomEnabled && zoomContentSize.width > 0) && 'h-full w-full',
           )}
           style={{
-            ...(inFullscreen && zoomContentSize.width > 0
+            ...(inFullscreen && zoomEnabled && zoomContentSize.width > 0
               ? { width: zoomContentSize.width, height: zoomContentSize.height }
               : undefined),
             transform: `translate3d(${videoZoom.x}px, ${videoZoom.y}px, 0) scale(${videoZoom.scale})`,
             transformOrigin: 'center center',
-            transition: isPinching ? undefined : 'transform 0.18s ease-out',
+            transition: isPinching ? 'none' : 'transform 0.18s ease-out',
           }}
         >
           <video
@@ -1829,11 +1810,11 @@ export function VideoPlayer({
             src={activeSourceUrl}
             className={cn(
               'pointer-events-none block h-full w-full',
-              inFullscreen
-                ? zoomContentSize.width > 0
-                  ? undefined
-                  : 'object-contain'
-                : 'object-cover sm:object-contain',
+              inFullscreen && zoomEnabled && zoomContentSize.width > 0
+                ? undefined
+                : inFullscreen
+                  ? 'object-contain'
+                  : 'object-cover sm:object-contain',
             )}
             playsInline
             preload="auto"

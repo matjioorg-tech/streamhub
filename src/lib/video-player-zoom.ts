@@ -80,6 +80,28 @@ export function clampPan(
   };
 }
 
+/** Zoom one pinch step from the previous transform toward the current focal point. */
+export function applyIncrementalFocalZoom(
+  prev: VideoZoomTransform,
+  nextScale: number,
+  focalClientX: number,
+  focalClientY: number,
+  containerRect: DOMRect,
+  contentWidth: number,
+  contentHeight: number,
+): VideoZoomTransform {
+  const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
+  if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
+
+  const focalX = focalClientX - containerRect.left - containerRect.width / 2;
+  const focalY = focalClientY - containerRect.top - containerRect.height / 2;
+  const ratio = prev.scale > 0 ? scale / prev.scale : 1;
+  const x = focalX - (focalX - prev.x) * ratio;
+  const y = focalY - (focalY - prev.y) * ratio;
+  const clamped = clampPan(scale, x, y, contentWidth, contentHeight);
+  return { scale, ...clamped };
+}
+
 /** Zoom toward the pinch focal point (YouTube-style). */
 export function applyFocalZoom(
   containerRect: DOMRect,
