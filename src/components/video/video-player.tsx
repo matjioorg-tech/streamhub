@@ -324,7 +324,7 @@ export function VideoPlayer({
 
   const posterUrl = video.thumbnailUrl ?? video.posterUrl ?? undefined;
 
-  const zoomEnabled = isFullscreen || pseudoFullscreen || isMobileDevice();
+  const zoomEnabled = isFullscreen || pseudoFullscreen;
 
   const applyVideoZoom = useCallback((next: VideoZoomTransform) => {
     videoZoomRef.current = next;
@@ -574,7 +574,6 @@ export function VideoPlayer({
       const speed = speedGestureRef.current;
       if (speed.active && e.touches.length >= 1) {
         e.preventDefault();
-        e.stopPropagation();
         updateSpeedFromPointerRef.current(e.touches[0].clientX);
         lastPointerRef.current.clientX = e.touches[0].clientX;
         lastPointerRef.current.clientY = e.touches[0].clientY;
@@ -846,20 +845,20 @@ export function VideoPlayer({
         processEnd(touch.clientX, touch.clientY);
       };
 
-      const listenerOpts = { passive: false, capture: true } as const;
-      window.addEventListener('pointermove', onDocMove, listenerOpts);
-      window.addEventListener('pointerup', onDocEnd, listenerOpts);
-      window.addEventListener('pointercancel', onDocEnd, listenerOpts);
-      window.addEventListener('touchmove', onTouchMove, listenerOpts);
-      window.addEventListener('touchend', onTouchEnd, listenerOpts);
-      window.addEventListener('touchcancel', onTouchEnd, listenerOpts);
+      const listenerOpts = { passive: false } as const;
+      document.addEventListener('pointermove', onDocMove, listenerOpts);
+      document.addEventListener('pointerup', onDocEnd, listenerOpts);
+      document.addEventListener('pointercancel', onDocEnd, listenerOpts);
+      document.addEventListener('touchmove', onTouchMove, listenerOpts);
+      document.addEventListener('touchend', onTouchEnd, listenerOpts);
+      document.addEventListener('touchcancel', onTouchEnd, listenerOpts);
       documentGestureCleanupRef.current = () => {
-        window.removeEventListener('pointermove', onDocMove, listenerOpts);
-        window.removeEventListener('pointerup', onDocEnd, listenerOpts);
-        window.removeEventListener('pointercancel', onDocEnd, listenerOpts);
-        window.removeEventListener('touchmove', onTouchMove, listenerOpts);
-        window.removeEventListener('touchend', onTouchEnd, listenerOpts);
-        window.removeEventListener('touchcancel', onTouchEnd, listenerOpts);
+        document.removeEventListener('pointermove', onDocMove);
+        document.removeEventListener('pointerup', onDocEnd);
+        document.removeEventListener('pointercancel', onDocEnd);
+        document.removeEventListener('touchmove', onTouchMove);
+        document.removeEventListener('touchend', onTouchEnd);
+        document.removeEventListener('touchcancel', onTouchEnd);
       };
     },
     [
@@ -1178,7 +1177,7 @@ export function VideoPlayer({
   );
 
   const updateFsPortraitChromeInset = useCallback(() => {
-    if (!isFullscreenRef.current || !isPortrait()) {
+    if (!pseudoFullscreen || !isPortrait()) {
       setFsPortraitChromeBottom(0);
       return;
     }
@@ -1195,7 +1194,7 @@ export function VideoPlayer({
     const displayedHeight = vh * scale;
     const letterbox = Math.max(0, (rect.height - displayedHeight) / 2);
     setFsPortraitChromeBottom(Math.round(letterbox));
-  }, [video.height, video.width]);
+  }, [pseudoFullscreen, video.height, video.width]);
 
   useEffect(() => {
     updateFsPortraitChromeInset();
@@ -1483,7 +1482,7 @@ export function VideoPlayer({
   const buffered = duration > 0 ? (bufferedEnd / duration) * 100 : 0;
   const controlsVisible = showControls || !playing;
   const inFullscreen = isFullscreen || pseudoFullscreen;
-  const liftChromeInPortraitFs = inFullscreen && fsPortraitChromeBottom > 0;
+  const liftChromeInPortraitFs = pseudoFullscreen && fsPortraitChromeBottom > 0;
 
   const playerMarkup = (
     <div
@@ -1511,9 +1510,7 @@ export function VideoPlayer({
             src={activeSourceUrl}
             className={cn(
               'pointer-events-none h-full w-full',
-              zoomEnabled || isFullscreen || pseudoFullscreen
-                ? 'object-contain'
-                : 'object-cover sm:object-contain',
+              isFullscreen || pseudoFullscreen ? 'object-contain' : 'object-cover sm:object-contain',
             )}
             playsInline
             preload="auto"
@@ -1573,8 +1570,8 @@ export function VideoPlayer({
       <div
         ref={gestureLayerRef}
         className={cn(
-          'absolute inset-0 z-40',
-          zoomEnabled || isFullscreen || pseudoFullscreen ? 'touch-none' : 'touch-manipulation',
+          'absolute inset-0 z-10',
+          isFullscreen || pseudoFullscreen ? 'touch-none' : 'touch-manipulation',
         )}
         onTouchStart={handlePinchTouchStart}
         onTouchMove={handlePinchTouchMove}
@@ -1689,13 +1686,15 @@ export function VideoPlayer({
         </button>
       )}
 
-      {/* Bottom chrome — pointer-events-none so gestures pass through; buttons stay interactive */}
+      {/* Bottom chrome — controls sit above gesture layer (z-20) */}
       <div
         className={cn(
-          'pointer-events-none absolute inset-x-0 z-20 transition-[opacity,bottom] duration-200',
-          controlsVisible ? 'opacity-100' : 'opacity-0',
+          'pointer-events-none absolute inset-x-0 bottom-0 z-20 transition-[opacity,bottom] duration-200',
+          controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
-        style={liftChromeInPortraitFs ? { bottom: fsPortraitChromeBottom } : undefined}
+        style={
+          liftChromeInPortraitFs ? { bottom: `${fsPortraitChromeBottom}px` } : undefined
+        }
       >
         <div className="bg-gradient-to-t from-black/90 via-black/50 to-transparent px-2 pt-4 pb-0 sm:px-3 sm:pt-5">
           <div className="flex items-center gap-0.5 sm:gap-1">
@@ -1841,14 +1840,14 @@ export function VideoPlayer({
           </div>
         </div>
 
-        {/* Progress bar — flush with bottom edge of player */}
+        {/* Progress bar — pinned to bottom edge */}
         <div
           data-progress
           className={cn(
             'pointer-events-auto relative w-full cursor-pointer touch-none',
             inFullscreen
               ? liftChromeInPortraitFs
-                ? 'h-4 pb-1'
+                ? 'h-4'
                 : 'h-5 pb-[max(0.25rem,env(safe-area-inset-bottom))]'
               : 'h-3.5',
           )}
