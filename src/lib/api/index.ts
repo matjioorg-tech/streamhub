@@ -277,6 +277,13 @@ export const adminApi = {
     return unwrap(response);
   },
 
+  wipeStorageKey: async (
+    keyId: string,
+  ): Promise<{ deleted: number; failed: string[]; message: string }> => {
+    const response = await apiClient.post(`/admin/storage-keys/${keyId}/wipe`);
+    return unwrap(response);
+  },
+
   teraboxSettings: async (): Promise<TeraboxSettings> => {
     const response = await apiClient.get('/admin/terabox');
     return unwrap(response);

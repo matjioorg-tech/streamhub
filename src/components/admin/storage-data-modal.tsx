@@ -4,11 +4,13 @@ import { useCallback, useEffect, useState, useTransition } from 'react';
 import { adminApi } from '@/lib/api';
 import type { B2StorageKey } from '@/lib/api/types';
 import { formatBytes } from '@/lib/utils';
+import { keysForSameVideoPrefix } from '@/lib/video-storage-key';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 type DeleteRequest =
   | { type: 'one'; key: string }
   | { type: 'many'; keys: string[] }
+  | { type: 'wipe' }
   | null;
 
 interface StorageDataModalProps {
@@ -106,24 +108,34 @@ export function StorageDataModal({
     try {
       if (deleteRequest.type === 'one') {
         await adminApi.deleteStorageObject(storageKey.id, deleteRequest.key);
-        setObjects((prev) => prev.filter((o) => o.key !== deleteRequest.key));
+        const matches = keysForSameVideoPrefix(deleteRequest.key);
+        setObjects((prev) => prev.filter((o) => !matches(o.key)));
         setSelection((prev) => {
           const next = new Set(prev);
-          next.delete(deleteRequest.key);
+          for (const key of [...next]) {
+            if (matches(key)) next.delete(key);
+          }
           return next;
         });
-      } else {
+      } else if (deleteRequest.type === 'many') {
         const result = await adminApi.bulkDeleteStorageObjects(
           storageKey.id,
           deleteRequest.keys,
         );
-        const deleted = new Set(
-          deleteRequest.keys.filter((k) => !result.failed.includes(k)),
-        );
-        setObjects((prev) => prev.filter((o) => !deleted.has(o.key)));
-        setSelectedKeys(new Set(result.failed));
+        const failed = new Set(result.failed);
+        setObjects((prev) => prev.filter((o) => !failed.has(o.key)));
+        setSelectedKeys(failed);
         if (result.failed.length > 0) {
           setError(`Deleted ${result.deleted} object(s). Failed: ${result.failed.length}.`);
+        }
+      } else {
+        const result = await adminApi.wipeStorageKey(storageKey.id);
+        setObjects([]);
+        setSelectedKeys(new Set());
+        if (result.failed.length > 0) {
+          setError(
+            `Wiped ${result.deleted} object(s). ${result.failed.length} object(s) could not be deleted.`,
+          );
         }
       }
       onUsageChanged();
@@ -167,6 +179,15 @@ export function StorageDataModal({
         onCancel={() => setDeleteRequest(null)}
         onConfirm={() => void runDelete()}
       />
+    ) : deleteRequest?.type === 'wipe' ? (
+      <ConfirmDialog
+        title="Wipe entire bucket?"
+        description="This deletes every object in this B2 bucket and removes all videos from the site. This cannot be undone."
+        confirmLabel="Wipe everything"
+        loading={deleting}
+        onCancel={() => setDeleteRequest(null)}
+        onConfirm={() => void runDelete()}
+      />
     ) : null;
 
   return (
@@ -184,6 +205,14 @@ export function StorageDataModal({
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteRequest({ type: 'wipe' })}
+                disabled={deleting}
+                className="rounded-lg border border-red-800 px-3 py-1.5 text-sm text-red-300 hover:bg-red-950 disabled:opacity-50"
+              >
+                Wipe all
+              </button>
               {selectedCount > 0 && (
                 <button
                   type="button"
