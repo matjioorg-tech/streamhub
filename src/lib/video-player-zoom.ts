@@ -112,3 +112,40 @@ export function snapVideoZoom(
 export function formatZoomPercent(scale: number): string {
   return `${Math.round(scale * 100)}%`;
 }
+
+export function reclampVideoZoom(
+  transform: VideoZoomTransform,
+  width: number,
+  height: number,
+): VideoZoomTransform {
+  if (transform.scale <= 1) return DEFAULT_VIDEO_ZOOM;
+  const clamped = clampPan(transform.scale, transform.x, transform.y, width, height);
+  return { scale: transform.scale, ...clamped };
+}
+
+/** Pinch zoom anchored to viewport center; pan only when already offset. */
+export function applyPinchCenterZoom(
+  startScale: number,
+  nextScale: number,
+  startX: number,
+  startY: number,
+  containerWidth: number,
+  containerHeight: number,
+): VideoZoomTransform {
+  const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
+  if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
+
+  if (Math.abs(startX) < 0.5 && Math.abs(startY) < 0.5) {
+    return { scale, x: 0, y: 0 };
+  }
+
+  const ratio = startScale > 0 ? scale / startScale : 1;
+  const clamped = clampPan(
+    scale,
+    startX * ratio,
+    startY * ratio,
+    containerWidth,
+    containerHeight,
+  );
+  return { scale, ...clamped };
+}

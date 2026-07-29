@@ -22,7 +22,7 @@ import { takeVideoAutoplayIntent } from '@/lib/video-autoplay';
 import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
 import {
   DEFAULT_VIDEO_ZOOM,
-  applyCenterZoom,
+  applyPinchCenterZoom,
   formatZoomPercent,
   getTouchDistance,
   clampPan,
@@ -109,6 +109,14 @@ async function exitElementFullscreen(): Promise<void> {
   if (doc.webkitExitFullscreen) {
     await doc.webkitExitFullscreen();
   }
+}
+
+function getZoomViewportSize(container: HTMLElement): { width: number; height: number } {
+  const rect = container.getBoundingClientRect();
+  return {
+    width: Math.max(1, rect.width),
+    height: Math.max(1, rect.height),
+  };
 }
 
 function formatPlaybackRate(rate: number): string {
@@ -355,6 +363,9 @@ export function VideoPlayer({
     pinchGestureRef.current.active = false;
     pinchGestureRef.current.panning = false;
     pinchBlocksGesturesRef.current = false;
+    pinchGestureRef.current.startX = 0;
+    pinchGestureRef.current.startY = 0;
+    pinchGestureRef.current.startScale = 1;
   }, []);
 
   const clearHideTimer = useCallback(() => {
@@ -547,8 +558,10 @@ export function VideoPlayer({
         pinch.panning = false;
         pinch.startDistance = getTouchDistance(e.touches);
         pinch.startScale = videoZoomRef.current.scale;
-        pinch.startX = videoZoomRef.current.x;
-        pinch.startY = videoZoomRef.current.y;
+        const hasPan =
+          Math.abs(videoZoomRef.current.x) > 0.5 || Math.abs(videoZoomRef.current.y) > 0.5;
+        pinch.startX = hasPan ? videoZoomRef.current.x : 0;
+        pinch.startY = hasPan ? videoZoomRef.current.y : 0;
         setIsPinching(true);
         setGestureActive(true);
         cleanupDocumentGesture();
@@ -593,7 +606,7 @@ export function VideoPlayer({
       if (!container) return;
 
       const pinch = pinchGestureRef.current;
-      const rect = container.getBoundingClientRect();
+      const { width, height } = getZoomViewportSize(container);
 
       if (e.touches.length === 2 && pinch.active) {
         e.preventDefault();
@@ -601,13 +614,13 @@ export function VideoPlayer({
         if (pinch.startDistance <= 0) return;
 
         const nextScale = pinch.startScale * (distance / pinch.startDistance);
-        const updated = applyCenterZoom(
+        const updated = applyPinchCenterZoom(
           pinch.startScale,
           nextScale,
           pinch.startX,
           pinch.startY,
-          rect.width,
-          rect.height,
+          width,
+          height,
         );
         applyVideoZoom(updated);
         return;
@@ -632,8 +645,8 @@ export function VideoPlayer({
           videoZoomRef.current.scale,
           pinch.panOriginX + dx,
           pinch.panOriginY + dy,
-          rect.width,
-          rect.height,
+          width,
+          height,
         );
         applyVideoZoom({ scale: videoZoomRef.current.scale, x, y });
       }
@@ -665,8 +678,8 @@ export function VideoPlayer({
         setGestureActive(false);
 
         if (container) {
-          const rect = container.getBoundingClientRect();
-          applyVideoZoom(snapVideoZoom(videoZoomRef.current, rect.width, rect.height));
+          const { width, height } = getZoomViewportSize(container);
+          applyVideoZoom(snapVideoZoom(videoZoomRef.current, width, height));
         } else {
           applyVideoZoom(snapVideoZoom(videoZoomRef.current, 1, 1));
         }
@@ -1374,6 +1387,30 @@ export function VideoPlayer({
   }, [pseudoFullscreen]);
 
   useEffect(() => {
+    if (!zoomEnabled) return;
+
+    let frame = 0;
+    const onViewportChange = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
+          resetVideoZoom();
+          updateFsPortraitChromeInset();
+        });
+      });
+    };
+
+    window.addEventListener('orientationchange', onViewportChange);
+    window.visualViewport?.addEventListener('resize', onViewportChange);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('orientationchange', onViewportChange);
+      window.visualViewport?.removeEventListener('resize', onViewportChange);
+    };
+  }, [resetVideoZoom, updateFsPortraitChromeInset, zoomEnabled]);
+
+  useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
     el.setAttribute('playsinline', 'true');
@@ -1614,11 +1651,11 @@ export function VideoPlayer({
         gestureActive && 'touch-none',
       )}
     >
-      <div className="absolute inset-0 overflow-hidden">
+      <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
         <div
-          className="absolute left-1/2 top-1/2 h-full w-full will-change-transform"
+          className="h-full w-full will-change-transform"
           style={{
-            transform: `translate(-50%, -50%) translate3d(${videoZoom.x}px, ${videoZoom.y}px, 0) scale(${videoZoom.scale})`,
+            transform: `translate3d(${videoZoom.x}px, ${videoZoom.y}px, 0) scale(${videoZoom.scale})`,
             transformOrigin: 'center center',
             transition: isPinching ? undefined : 'transform 0.18s ease-out',
           }}

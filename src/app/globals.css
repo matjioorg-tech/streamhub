@@ -85,10 +85,13 @@ input[type='range']::-webkit-slider-runnable-track {
 /* iOS / Safari fallback when native fullscreen API is unavailable */
 .player-pseudo-fullscreen {
   position: fixed !important;
-  inset: 0 !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
   z-index: 9999 !important;
-  width: 100% !important;
-  height: 100% !important;
+  width: auto !important;
+  height: auto !important;
   max-width: none !important;
   max-height: none !important;
   min-height: 0 !important;
@@ -105,8 +108,8 @@ body.video-pseudo-fullscreen {
 
 @supports (height: 100dvh) {
   .player-pseudo-fullscreen {
-    width: 100dvw !important;
-    height: 100dvh !important;
+    width: auto !important;
+    height: auto !important;
   }
 }
 
