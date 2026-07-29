@@ -136,6 +136,16 @@ export function useSyncAllStorageKeyUsage() {
   });
 }
 
+export function useConfigureCloudflareCaching() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => adminApi.configureCloudflareCaching(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'storage-keys'] });
+    },
+  });
+}
+
 export function useDeactivateStorageKey() {
   const queryClient = useQueryClient();
   return useMutation({

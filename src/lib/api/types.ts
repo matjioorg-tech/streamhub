@@ -174,6 +174,14 @@ export interface B2StorageKey {
   updatedAt: string;
 }
 
+export interface CloudflareBucketConfigureResult {
+  id: string;
+  name: string;
+  bucket: string;
+  status: 'updated' | 'skipped' | 'failed';
+  message: string;
+}
+
 export interface CreateB2StorageKeyInput {
   name: string;
   endpoint: string;

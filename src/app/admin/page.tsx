@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import {
   AlertTriangle,
   ChevronRight,
+  Cloud,
   Clock,
   Eye,
   Film,
@@ -13,7 +15,11 @@ import {
   Mail,
   Upload,
 } from 'lucide-react';
-import { useAdminDashboard } from '@/hooks/use-admin';
+import {
+  useAdminDashboard,
+  useConfigureCloudflareCaching,
+} from '@/hooks/use-admin';
+import type { CloudflareBucketConfigureResult } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
 
 const quickLinks = [
@@ -65,6 +71,22 @@ function StatSkeleton() {
 
 export default function AdminDashboardPage() {
   const { data, isLoading } = useAdminDashboard();
+  const configureCloudflare = useConfigureCloudflareCaching();
+  const [cloudflareResults, setCloudflareResults] = useState<
+    CloudflareBucketConfigureResult[] | null
+  >(null);
+  const [cloudflareError, setCloudflareError] = useState<string | null>(null);
+
+  const handleConfigureCloudflare = async () => {
+    setCloudflareError(null);
+    setCloudflareResults(null);
+    try {
+      const results = await configureCloudflare.mutateAsync();
+      setCloudflareResults(results);
+    } catch (err) {
+      setCloudflareError(err instanceof Error ? err.message : 'Cloudflare setup failed');
+    }
+  };
 
   const stats = data
     ? [
@@ -137,6 +159,68 @@ export default function AdminDashboardPage() {
           })}
         </div>
       ) : null}
+
+      <div>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
+          CDN & Storage
+        </h2>
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Cloud className="h-5 w-5 text-sky-400" />
+                <h3 className="font-medium text-white">Configure Cloudflare CDN</h3>
+              </div>
+              <p className="mt-2 text-sm text-zinc-400">
+                Applies B2 bucket Cache-Control headers for Cloudflare caching and Bandwidth
+                Alliance. Set <code className="text-zinc-300">B2_PUBLIC_URL</code> to your CDN
+                subdomain after DNS is ready.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleConfigureCloudflare()}
+              disabled={configureCloudflare.isPending}
+              className="shrink-0 rounded-lg border border-sky-800 bg-sky-950/40 px-4 py-2.5 text-sm font-medium text-sky-200 transition hover:bg-sky-950/70 disabled:opacity-50"
+            >
+              {configureCloudflare.isPending ? 'Configuring...' : 'Configure B2 for Cloudflare'}
+            </button>
+          </div>
+
+          {cloudflareError && (
+            <p className="mt-4 rounded-lg border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+              {cloudflareError}
+            </p>
+          )}
+
+          {cloudflareResults && cloudflareResults.length > 0 && (
+            <ul className="mt-4 space-y-2">
+              {cloudflareResults.map((result) => (
+                <li
+                  key={result.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-sm"
+                >
+                  <span className="text-zinc-300">
+                    {result.name}{' '}
+                    <span className="text-zinc-500">({result.bucket})</span>
+                  </span>
+                  <span
+                    className={cn(
+                      'rounded-full px-2 py-0.5 text-xs font-medium',
+                      result.status === 'updated' && 'bg-green-950 text-green-300',
+                      result.status === 'skipped' && 'bg-zinc-800 text-zinc-400',
+                      result.status === 'failed' && 'bg-red-950 text-red-300',
+                    )}
+                  >
+                    {result.status}
+                  </span>
+                  <span className="w-full text-xs text-zinc-500 sm:w-auto">{result.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
 
       <div>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">

@@ -21,6 +21,7 @@ import type {
   UpdateVideoInput,
   GeneratedVideoMetadata,
   NearbyVideos,
+  CloudflareBucketConfigureResult,
 } from './types';
 
 export interface VideoQueryParams {
@@ -228,6 +229,11 @@ export const adminApi = {
 
   syncAllStorageKeyUsage: async (): Promise<B2StorageKey[]> => {
     const response = await apiClient.post('/admin/storage-keys/sync-all-usage');
+    return unwrap(response);
+  },
+
+  configureCloudflareCaching: async (): Promise<CloudflareBucketConfigureResult[]> => {
+    const response = await apiClient.post('/admin/storage-keys/configure-cloudflare');
     return unwrap(response);
   },
 

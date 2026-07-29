@@ -7,6 +7,7 @@ import {
   useTestStorageKey,
   useSyncStorageKeyUsage,
   useSyncAllStorageKeyUsage,
+  useConfigureCloudflareCaching,
   useDeactivateStorageKey,
 } from '@/hooks/use-admin';
 import type { CreateB2StorageKeyInput, B2StorageKey } from '@/lib/api/types';
@@ -33,6 +34,7 @@ export default function AdminStorageKeysPage() {
   const testKey = useTestStorageKey();
   const syncUsage = useSyncStorageKeyUsage();
   const syncAllUsage = useSyncAllStorageKeyUsage();
+  const configureCloudflare = useConfigureCloudflareCaching();
   const deactivate = useDeactivateStorageKey();
 
   const [showForm, setShowForm] = useState(false);
@@ -108,6 +110,23 @@ export default function AdminStorageKeysPage() {
     }
   };
 
+  const handleConfigureCloudflare = async () => {
+    setMessage(null);
+    setError(null);
+    try {
+      const results = await configureCloudflare.mutateAsync();
+      const updated = results.filter((r) => r.status === 'updated').length;
+      const skipped = results.filter((r) => r.status === 'skipped').length;
+      const failed = results.filter((r) => r.status === 'failed').length;
+      setMessage(
+        `Cloudflare setup: ${updated} updated, ${skipped} skipped, ${failed} failed.`,
+      );
+      refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Cloudflare setup failed');
+    }
+  };
+
   const runDeactivate = async () => {
     if (!deactivateTarget) return;
     try {
@@ -130,14 +149,24 @@ export default function AdminStorageKeysPage() {
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {keys && keys.length > 0 && (
-            <button
-              type="button"
-              onClick={handleSyncAll}
-              disabled={syncAllUsage.isPending}
-              className="w-full rounded-lg border border-zinc-700 px-4 py-3 text-sm hover:bg-zinc-800 disabled:opacity-50 sm:w-auto sm:py-2"
-            >
-              {syncAllUsage.isPending ? 'Syncing...' : 'Sync all'}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => void handleConfigureCloudflare()}
+                disabled={configureCloudflare.isPending}
+                className="w-full rounded-lg border border-sky-800 bg-sky-950/30 px-4 py-3 text-sm text-sky-200 hover:bg-sky-950/50 disabled:opacity-50 sm:w-auto sm:py-2"
+              >
+                {configureCloudflare.isPending ? 'Configuring...' : 'Configure Cloudflare'}
+              </button>
+              <button
+                type="button"
+                onClick={handleSyncAll}
+                disabled={syncAllUsage.isPending}
+                className="w-full rounded-lg border border-zinc-700 px-4 py-3 text-sm hover:bg-zinc-800 disabled:opacity-50 sm:w-auto sm:py-2"
+              >
+                {syncAllUsage.isPending ? 'Syncing...' : 'Sync all'}
+              </button>
+            </>
           )}
           <button
             type="button"
