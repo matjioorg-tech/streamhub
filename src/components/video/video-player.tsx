@@ -1619,6 +1619,12 @@ export function VideoPlayer({
   }, [clearHideTimer]);
 
   useEffect(() => {
+    if ((isFullscreen || pseudoFullscreen) && playing && showControls) {
+      scheduleHideControls();
+    }
+  }, [isFullscreen, pseudoFullscreen, playing, showControls, scheduleHideControls]);
+
+  useEffect(() => {
     if (playing && showControls) {
       scheduleHideControls();
     } else {
@@ -1701,7 +1707,8 @@ export function VideoPlayer({
   const controlsVisible = showControls || !playing;
   const inFullscreen = isFullscreen || pseudoFullscreen;
   const liftChromeInPortraitFs = pseudoFullscreen && fsPortraitChromeBottom > 0;
-  const progressBarVisible = controlsVisible || inFullscreen || isScrubbing;
+  const progressBarVisible = controlsVisible || isScrubbing;
+  const fsChromeBottomPx = liftChromeInPortraitFs ? fsPortraitChromeBottom : 0;
 
   const playerMarkup = (
     <div
@@ -1920,12 +1927,13 @@ export function VideoPlayer({
         </button>
       )}
 
-      {/* Bottom chrome — progress stays visible in fullscreen */}
+      {/* Bottom chrome — auto-hides while playing (YouTube-style) */}
       <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-20"
-        style={
-          liftChromeInPortraitFs ? { bottom: `${fsPortraitChromeBottom}px` } : undefined
-        }
+        className={cn(
+          'player-fs-chrome pointer-events-none absolute inset-x-0 bottom-0 z-20',
+          inFullscreen && isMobileDevice() && !liftChromeInPortraitFs && 'player-fs-chrome-mobile',
+        )}
+        style={fsChromeBottomPx > 0 ? { bottom: `${fsChromeBottomPx}px` } : undefined}
       >
         <div
           className={cn(
@@ -2078,16 +2086,12 @@ export function VideoPlayer({
         </div>
         </div>
 
-        {/* Progress bar — always visible in fullscreen */}
+        {/* Progress bar */}
         <div
           data-progress
           className={cn(
             'pointer-events-auto relative w-full cursor-pointer touch-none transition-opacity duration-200',
-            inFullscreen
-              ? liftChromeInPortraitFs
-                ? 'h-5'
-                : 'h-6 pb-[max(0.35rem,env(safe-area-inset-bottom))]'
-              : 'h-3.5',
+            inFullscreen ? 'h-7' : 'h-3.5',
             progressBarVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
           onPointerDown={(e) => {

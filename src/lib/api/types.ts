@@ -57,6 +57,11 @@ export interface Video {
   videoTags?: { tag: Tag }[];
 }
 
+export interface NearbyVideos {
+  before: Video[];
+  after: Video[];
+}
+
 export interface UpdateVideoInput {
   title?: string;
   description?: string;

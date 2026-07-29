@@ -20,6 +20,7 @@ import type {
   TeraboxTestResult,
   UpdateVideoInput,
   GeneratedVideoMetadata,
+  NearbyVideos,
 } from './types';
 
 export interface VideoQueryParams {
@@ -51,6 +52,11 @@ export const videosApi = {
 
   getBySlug: async (slug: string): Promise<Video> => {
     const response = await apiClient.get(`/watch/${slug}`);
+    return unwrap(response);
+  },
+
+  nearby: async (slug: string, limit = 8): Promise<NearbyVideos> => {
+    const response = await apiClient.get(`/watch/${slug}/nearby`, { params: { limit } });
     return unwrap(response);
   },
 

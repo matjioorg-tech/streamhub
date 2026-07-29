@@ -6,11 +6,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { PageLayout } from '@/components/layout/page-layout';
 import { VideoPlayer } from '@/components/video/video-player';
 import { VideoMetadataPanel } from '@/components/video/video-metadata-panel';
+import { VideoSuggestions } from '@/components/video/video-suggestions';
 import { AdminVideoEditButton } from '@/components/admin/admin-video-edit-button';
-import { useVideo } from '@/hooks/use-videos';
+import { useVideo, useNearbyVideos } from '@/hooks/use-videos';
 import { primeVideoStream } from '@/lib/video-cache';
-import { formatViews, formatDuration, cn } from '@/lib/utils';
-import { Eye, Calendar, Film } from 'lucide-react';
+import { formatViews, formatDuration, formatUploadLabel, cn } from '@/lib/utils';
+import { Eye, Calendar, Film, Clock } from 'lucide-react';
 import type { Video } from '@/lib/api/types';
 
 export default function WatchPage({
@@ -21,6 +22,7 @@ export default function WatchPage({
   const { slug } = use(params);
   const queryClient = useQueryClient();
   const { data: video, isLoading, error, refetch } = useVideo(slug);
+  const { data: nearby, isLoading: nearbyLoading } = useNearbyVideos(slug, 8);
   const [editedVideo, setEditedVideo] = useState<Video | null>(null);
   const displayVideo = editedVideo ?? video;
 
@@ -38,6 +40,7 @@ export default function WatchPage({
     setEditedVideo(updated);
     void refetch();
     queryClient.invalidateQueries({ queryKey: ['videos'] });
+    queryClient.invalidateQueries({ queryKey: ['video', slug, 'nearby'] });
     if (updated.slug !== slug) {
       window.history.replaceState(null, '', `/watch/${updated.slug}`);
       queryClient.invalidateQueries({ queryKey: ['video', updated.slug] });
@@ -51,10 +54,15 @@ export default function WatchPage({
   if (isLoading && !hasPlayback) {
     return (
       <PageLayout>
-        <div className="animate-pulse space-y-4">
+        <div className="animate-pulse space-y-4 px-3 md:px-0">
           <div className="aspect-video rounded-xl bg-zinc-800" />
           <div className="h-8 w-2/3 rounded bg-zinc-800" />
           <div className="h-4 w-1/3 rounded bg-zinc-800" />
+          <div className="grid grid-cols-2 gap-3 pt-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="aspect-video rounded-xl bg-zinc-800" />
+            ))}
+          </div>
         </div>
       </PageLayout>
     );
@@ -81,29 +89,34 @@ export default function WatchPage({
           <VideoPlayer video={displayVideo} />
         </div>
 
-        <div className="space-y-3 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:space-y-4 md:px-0">
+        <div className="space-y-4 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:space-y-5 md:px-0">
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
-              <h1 className="text-[15px] font-semibold leading-snug text-white sm:text-xl lg:text-2xl">
+              <h1 className="text-base font-semibold leading-snug text-white sm:text-xl lg:text-2xl">
                 {displayVideo.title}
               </h1>
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-zinc-500 sm:mt-2 sm:text-sm">
-                <span className="inline-flex items-center gap-1">
-                  <Eye className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full border border-zinc-800 bg-zinc-900/70 px-2.5 py-1 text-[11px] text-zinc-400 sm:text-xs">
+                  <Eye className="h-3 w-3" />
                   {formatViews(displayVideo.views)} views
                 </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-zinc-800 bg-zinc-900/70 px-2.5 py-1 text-[11px] text-zinc-400 sm:text-xs">
+                  <Clock className="h-3 w-3" />
+                  Uploaded {formatUploadLabel(displayVideo.createdAt)}
+                </span>
                 {displayVideo.publishedAt && (
-                  <span className="inline-flex items-center gap-1">
-                    <Calendar className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                  <span className="inline-flex items-center gap-1 rounded-full border border-zinc-800 bg-zinc-900/70 px-2.5 py-1 text-[11px] text-zinc-400 sm:text-xs">
+                    <Calendar className="h-3 w-3" />
+                    Published{' '}
                     {new Date(displayVideo.publishedAt).toLocaleDateString(undefined, {
-                      year: 'numeric',
                       month: 'short',
                       day: 'numeric',
+                      year: 'numeric',
                     })}
                   </span>
                 )}
                 {displayVideo.duration != null && displayVideo.duration > 0 && (
-                  <span className="hidden rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] text-zinc-400 sm:inline">
+                  <span className="rounded-full border border-zinc-800 bg-zinc-900/70 px-2.5 py-1 text-[11px] text-zinc-400 sm:text-xs">
                     {formatDuration(displayVideo.duration)}
                   </span>
                 )}
@@ -133,6 +146,21 @@ export default function WatchPage({
             </div>
           )}
 
+          {nearbyLoading ? (
+            <div className="space-y-6 border-t border-zinc-800/80 pt-6">
+              <div className="h-5 w-40 animate-pulse rounded bg-zinc-800" />
+              <div className="-mx-3 flex gap-3 overflow-hidden px-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="w-[72vw] shrink-0 space-y-2">
+                    <div className="aspect-video animate-pulse rounded-xl bg-zinc-800" />
+                    <div className="h-4 w-3/4 animate-pulse rounded bg-zinc-800" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : nearby ? (
+            <VideoSuggestions before={nearby.before} after={nearby.after} />
+          ) : null}
         </div>
       </div>
     </PageLayout>

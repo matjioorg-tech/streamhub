@@ -37,6 +37,15 @@ export function useVideo(slug: string) {
   });
 }
 
+export function useNearbyVideos(slug: string, limit = 8) {
+  return useQuery({
+    queryKey: ['video', slug, 'nearby', limit],
+    queryFn: () => videosApi.nearby(slug, limit),
+    enabled: !!slug,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useSearchVideos(params: VideoQueryParams) {
   return useQuery({
     queryKey: ['search', params],

@@ -120,6 +120,21 @@ body.video-pseudo-fullscreen nav[class*='fixed'][class*='bottom'] {
   display: none !important;
 }
 
+/* Fullscreen player chrome — lift controls off the bottom edge on mobile */
+.group\/player:fullscreen .player-fs-chrome-mobile,
+.group\/player:-webkit-full-screen .player-fs-chrome-mobile,
+.player-pseudo-fullscreen .player-fs-chrome-mobile {
+  bottom: max(16px, env(safe-area-inset-bottom, 0px)) !important;
+}
+
+@media (orientation: landscape) {
+  .group\/player:fullscreen .player-fs-chrome-mobile,
+  .group\/player:-webkit-full-screen .player-fs-chrome-mobile,
+  .player-pseudo-fullscreen .player-fs-chrome-mobile {
+    bottom: max(20px, env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
 /* YouTube-style double-tap seek feedback */
 @keyframes seek-feedback-pop {
   0% {
