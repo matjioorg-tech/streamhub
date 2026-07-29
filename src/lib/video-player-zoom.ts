@@ -15,6 +15,14 @@ export interface VideoContentSize {
   height: number;
 }
 
+/** Viewport used for pinch focal point and pan clamping (visible screen area). */
+export interface ZoomViewport {
+  centerX: number;
+  centerY: number;
+  width: number;
+  height: number;
+}
+
 /** Visible video bounds when using object-contain inside a container. */
 export function computeContainedVideoSize(
   containerWidth: number,
@@ -33,6 +41,59 @@ export function computeContainedVideoSize(
   return {
     width: videoWidth * fitScale,
     height: videoHeight * fitScale,
+  };
+}
+
+/** Prefer visualViewport size for clamping; use container center for focal (video position). */
+export function getZoomViewport(containerRect?: DOMRect): ZoomViewport {
+  const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+  const viewW =
+    vv?.width ??
+    containerRect?.width ??
+    (typeof window !== 'undefined' ? window.innerWidth : 1);
+  const viewH =
+    vv?.height ??
+    containerRect?.height ??
+    (typeof window !== 'undefined' ? window.innerHeight : 1);
+
+  if (containerRect) {
+    return {
+      centerX: containerRect.left + containerRect.width / 2,
+      centerY: containerRect.top + containerRect.height / 2,
+      width: Math.max(1, viewW),
+      height: Math.max(1, viewH),
+    };
+  }
+
+  if (vv) {
+    return {
+      centerX: vv.offsetLeft + vv.width / 2,
+      centerY: vv.offsetTop + vv.height / 2,
+      width: Math.max(1, vv.width),
+      height: Math.max(1, vv.height),
+    };
+  }
+
+  if (typeof window !== 'undefined') {
+    return {
+      centerX: window.innerWidth / 2,
+      centerY: window.innerHeight / 2,
+      width: Math.max(1, window.innerWidth),
+      height: Math.max(1, window.innerHeight),
+    };
+  }
+
+  return { centerX: 0, centerY: 0, width: 1, height: 1 };
+}
+
+export function clientToZoomLocal(
+  clientX: number,
+  clientY: number,
+  viewport: ZoomViewport,
+): { x: number; y: number } {
+  return {
+    x: clientX - viewport.centerX,
+    y: clientY - viewport.centerY,
   };
 }
 
@@ -68,12 +129,15 @@ export function clampPan(
   scale: number,
   x: number,
   y: number,
-  width: number,
-  height: number,
+  contentWidth: number,
+  contentHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
 ): Pick<VideoZoomTransform, 'x' | 'y'> {
   if (scale <= 1) return { x: 0, y: 0 };
-  const maxX = (width * (scale - 1)) / 2;
-  const maxY = (height * (scale - 1)) / 2;
+
+  const maxX = Math.max(0, (contentWidth * scale - viewportWidth) / 2);
+  const maxY = Math.max(0, (contentHeight * scale - viewportHeight) / 2);
   return {
     x: Math.max(-maxX, Math.min(maxX, x)),
     y: Math.max(-maxY, Math.min(maxY, y)),
@@ -86,25 +150,24 @@ export function applyIncrementalFocalZoom(
   nextScale: number,
   focalClientX: number,
   focalClientY: number,
-  containerRect: DOMRect,
+  viewport: ZoomViewport,
   contentWidth: number,
   contentHeight: number,
 ): VideoZoomTransform {
   const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
   if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
 
-  const focalX = focalClientX - containerRect.left - containerRect.width / 2;
-  const focalY = focalClientY - containerRect.top - containerRect.height / 2;
+  const { x: focalX, y: focalY } = clientToZoomLocal(focalClientX, focalClientY, viewport);
   const ratio = prev.scale > 0 ? scale / prev.scale : 1;
   const x = focalX - (focalX - prev.x) * ratio;
   const y = focalY - (focalY - prev.y) * ratio;
-  const clamped = clampPan(scale, x, y, contentWidth, contentHeight);
+  const clamped = clampPan(scale, x, y, contentWidth, contentHeight, viewport.width, viewport.height);
   return { scale, ...clamped };
 }
 
 /** Zoom toward the pinch focal point (YouTube-style). */
 export function applyFocalZoom(
-  containerRect: DOMRect,
+  viewport: ZoomViewport,
   startScale: number,
   nextScale: number,
   focalClientX: number,
@@ -117,24 +180,32 @@ export function applyFocalZoom(
   const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
   if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
 
-  // Focal point relative to the container/content center at rest.
-  const focalX = focalClientX - containerRect.left - containerRect.width / 2;
-  const focalY = focalClientY - containerRect.top - containerRect.height / 2;
+  const { x: focalX, y: focalY } = clientToZoomLocal(focalClientX, focalClientY, viewport);
   const ratio = startScale > 0 ? scale / startScale : 1;
   const x = focalX - (focalX - startX) * ratio;
   const y = focalY - (focalY - startY) * ratio;
-  const clamped = clampPan(scale, x, y, contentWidth, contentHeight);
+  const clamped = clampPan(scale, x, y, contentWidth, contentHeight, viewport.width, viewport.height);
   return { scale, ...clamped };
 }
 
 export function snapVideoZoom(
   transform: VideoZoomTransform,
-  width: number,
-  height: number,
+  contentWidth: number,
+  contentHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
 ): VideoZoomTransform {
   if (transform.scale <= VIDEO_ZOOM_SNAP) return DEFAULT_VIDEO_ZOOM;
   if (Math.abs(transform.scale - 1) < 0.06) return DEFAULT_VIDEO_ZOOM;
-  const clamped = clampPan(transform.scale, transform.x, transform.y, width, height);
+  const clamped = clampPan(
+    transform.scale,
+    transform.x,
+    transform.y,
+    contentWidth,
+    contentHeight,
+    viewportWidth,
+    viewportHeight,
+  );
   return { scale: transform.scale, ...clamped };
 }
 
@@ -144,11 +215,21 @@ export function formatZoomPercent(scale: number): string {
 
 export function reclampVideoZoom(
   transform: VideoZoomTransform,
-  width: number,
-  height: number,
+  contentWidth: number,
+  contentHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
 ): VideoZoomTransform {
   if (transform.scale <= 1) return DEFAULT_VIDEO_ZOOM;
-  const clamped = clampPan(transform.scale, transform.x, transform.y, width, height);
+  const clamped = clampPan(
+    transform.scale,
+    transform.x,
+    transform.y,
+    contentWidth,
+    contentHeight,
+    viewportWidth,
+    viewportHeight,
+  );
   return { scale: transform.scale, ...clamped };
 }
 
@@ -157,14 +238,14 @@ export function toggleDoubleTapZoom(
   current: VideoZoomTransform,
   tapClientX: number,
   tapClientY: number,
-  containerRect: DOMRect,
+  viewport: ZoomViewport,
   contentWidth: number,
   contentHeight: number,
   targetScale = 2,
 ): VideoZoomTransform {
   if (current.scale > 1.05) return DEFAULT_VIDEO_ZOOM;
   return applyFocalZoom(
-    containerRect,
+    viewport,
     1,
     targetScale,
     tapClientX,
@@ -188,9 +269,10 @@ export function applyPinchCenterZoom(
   focalClientY?: number,
   containerRect?: DOMRect,
 ): VideoZoomTransform {
-  if (containerRect && focalClientX != null && focalClientY != null) {
+  const viewport = getZoomViewport(containerRect);
+  if (focalClientX != null && focalClientY != null) {
     return applyFocalZoom(
-      containerRect,
+      viewport,
       startScale,
       nextScale,
       focalClientX,
@@ -204,7 +286,15 @@ export function applyPinchCenterZoom(
   const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
   if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
   const ratio = startScale > 0 ? scale / startScale : 1;
-  const clamped = clampPan(scale, startX * ratio, startY * ratio, contentWidth, contentHeight);
+  const clamped = clampPan(
+    scale,
+    startX * ratio,
+    startY * ratio,
+    contentWidth,
+    contentHeight,
+    viewport.width,
+    viewport.height,
+  );
   return { scale, ...clamped };
 }
 
@@ -224,6 +314,8 @@ export function applyCenterZoom(
     scale,
     startX * ratio,
     startY * ratio,
+    containerWidth,
+    containerHeight,
     containerWidth,
     containerHeight,
   );

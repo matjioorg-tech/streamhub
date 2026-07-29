@@ -23,11 +23,11 @@ import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
 import {
   DEFAULT_VIDEO_ZOOM,
   applyIncrementalFocalZoom,
-  applyFocalZoom,
   computeContainedVideoSize,
   formatZoomPercent,
   getTouchCenter,
   getTouchDistance,
+  getZoomViewport,
   clampPan,
   snapVideoZoom,
   reclampVideoZoom,
@@ -235,6 +235,7 @@ export function VideoPlayer({
   autoPlay = false,
 }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoTransformRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef<{ time: number; zone: 'left' | 'right' | 'center' } | null>(
@@ -403,7 +404,13 @@ export function VideoPlayer({
     );
     zoomContentSizeRef.current = next;
     setZoomContentSize(next);
-  }, [video.height, video.width]);
+
+    const wrapper = videoTransformRef.current;
+    if (wrapper && (isFullscreen || pseudoFullscreen)) {
+      wrapper.style.width = `${next.width}px`;
+      wrapper.style.height = `${next.height}px`;
+    }
+  }, [isFullscreen, pseudoFullscreen, video.height, video.width]);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
@@ -655,6 +662,7 @@ export function VideoPlayer({
         if (pinch.lastDistance <= 0 || distance <= 0) return;
 
         const rect = container.getBoundingClientRect();
+        const viewport = getZoomViewport(rect);
         const center = getTouchCenter(e.touches);
         const nextScale = pinch.lastScale * (distance / pinch.lastDistance);
         const updated = applyIncrementalFocalZoom(
@@ -662,7 +670,7 @@ export function VideoPlayer({
           nextScale,
           center.x,
           center.y,
-          rect,
+          viewport,
           width,
           height,
         );
@@ -689,12 +697,15 @@ export function VideoPlayer({
         }
 
         e.preventDefault();
+        const viewport = getZoomViewport(container.getBoundingClientRect());
         const { x, y } = clampPan(
           videoZoomRef.current.scale,
           pinch.panOriginX + dx,
           pinch.panOriginY + dy,
           width,
           height,
+          viewport.width,
+          viewport.height,
         );
         applyVideoZoom({ scale: videoZoomRef.current.scale, x, y });
       }
@@ -732,9 +743,15 @@ export function VideoPlayer({
             video.width ?? 16,
             video.height ?? 9,
           );
-          applyVideoZoom(snapVideoZoom(videoZoomRef.current, width, height));
+          const viewport = getZoomViewport(container.getBoundingClientRect());
+          applyVideoZoom(
+            snapVideoZoom(videoZoomRef.current, width, height, viewport.width, viewport.height),
+          );
         } else {
-          applyVideoZoom(snapVideoZoom(videoZoomRef.current, 1, 1));
+          const viewport = getZoomViewport();
+          applyVideoZoom(
+            snapVideoZoom(videoZoomRef.current, 1, 1, viewport.width, viewport.height),
+          );
         }
       } else if (e.touches.length === 1 && pinch.active) {
         pinch.active = false;
@@ -1281,11 +1298,12 @@ export function VideoPlayer({
         const container = containerRef.current;
         if (container) {
           const rect = container.getBoundingClientRect();
+          const viewport = getZoomViewport(rect);
           const { width, height } = zoomContentSizeRef.current.width
             ? zoomContentSizeRef.current
             : getZoomContentSize(container, videoRef.current, video.width ?? 16, video.height ?? 9);
           applyVideoZoom(
-            toggleDoubleTapZoom(videoZoomRef.current, clientX, clientY, rect, width, height),
+            toggleDoubleTapZoom(videoZoomRef.current, clientX, clientY, viewport, width, height),
           );
         }
         setShowControls(true);
@@ -1555,8 +1573,18 @@ export function VideoPlayer({
           syncZoomContentSize();
           updateFsPortraitChromeInset();
           const { width, height } = zoomContentSizeRef.current;
+          const container = containerRef.current;
+          const viewport = getZoomViewport(container?.getBoundingClientRect());
           if (videoZoomRef.current.scale > 1.05 && width > 0 && height > 0) {
-            applyVideoZoom(reclampVideoZoom(videoZoomRef.current, width, height));
+            applyVideoZoom(
+              reclampVideoZoom(
+                videoZoomRef.current,
+                width,
+                height,
+                viewport.width,
+                viewport.height,
+              ),
+            );
           } else {
             resetVideoZoom();
           }
@@ -1578,6 +1606,11 @@ export function VideoPlayer({
     if (!zoomEnabled) {
       zoomContentSizeRef.current = { width: 0, height: 0 };
       setZoomContentSize({ width: 0, height: 0 });
+      const wrapper = videoTransformRef.current;
+      if (wrapper) {
+        wrapper.style.width = '';
+        wrapper.style.height = '';
+      }
       return;
     }
 
@@ -1810,6 +1843,11 @@ export function VideoPlayer({
   const fsChromeBottomPx = liftChromeInPortraitFs ? fsPortraitChromeBottom : 0;
   const mobilePlayer = isMobileDevice() && !inFullscreen;
 
+  const activeZoomContent =
+    zoomContentSize.width > 0 ? zoomContentSize : zoomContentSizeRef.current;
+  const useContentSizedWrapper =
+    inFullscreen && zoomEnabled && activeZoomContent.width > 0;
+
   const playerMarkup = (
     <div
       ref={containerRef}
@@ -1824,15 +1862,16 @@ export function VideoPlayer({
     >
       <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
         <div
+          ref={videoTransformRef}
           className={cn(
             'shrink-0 will-change-transform',
-            !(inFullscreen && zoomEnabled && zoomContentSize.width > 0) && 'h-full w-full',
+            !useContentSizedWrapper && 'h-full w-full',
           )}
           style={{
-            ...(inFullscreen && zoomEnabled && zoomContentSize.width > 0
-              ? { width: zoomContentSize.width, height: zoomContentSize.height }
+            ...(useContentSizedWrapper
+              ? { width: activeZoomContent.width, height: activeZoomContent.height }
               : undefined),
-            transform: `translate3d(${videoZoom.x}px, ${videoZoom.y}px, 0) scale(${videoZoom.scale})`,
+            transform: `scale(${videoZoom.scale}) translate3d(${videoZoom.x / videoZoom.scale}px, ${videoZoom.y / videoZoom.scale}px, 0)`,
             transformOrigin: 'center center',
             transition: isPinching ? 'none' : 'transform 0.18s ease-out',
           }}
@@ -1842,7 +1881,7 @@ export function VideoPlayer({
             src={activeSourceUrl}
             className={cn(
               'pointer-events-none block h-full w-full',
-              inFullscreen && zoomEnabled && zoomContentSize.width > 0
+              useContentSizedWrapper
                 ? undefined
                 : inFullscreen
                   ? 'object-contain'
