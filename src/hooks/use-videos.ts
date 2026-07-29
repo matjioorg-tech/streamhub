@@ -1,7 +1,8 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { videosApi, type VideoQueryParams } from '@/lib/api';
+import { findVideoInCache } from '@/lib/video-cache';
 
 export function useVideos(params?: VideoQueryParams, options?: { enabled?: boolean }) {
   return useQuery({
@@ -26,10 +27,13 @@ export function useLatestVideos(limit = 20) {
 }
 
 export function useVideo(slug: string) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: ['video', slug],
     queryFn: () => videosApi.getBySlug(slug),
     enabled: !!slug,
+    staleTime: 5 * 60 * 1000,
+    placeholderData: () => findVideoInCache(queryClient, slug),
   });
 }
 

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { Video, VideoQualityOption } from '@/lib/api/types';
 import { cn, formatDuration } from '@/lib/utils';
+import { pickAutoQualityOption } from '@/lib/video-quality';
 
 const SEEK_SECONDS = 10;
 const DOUBLE_TAP_MS = 320;
@@ -181,6 +182,7 @@ export function VideoPlayer({
   const lastAppliedRateRef = useRef(SPEED_DEFAULT);
   const overlayRafRef = useRef<number | null>(null);
   const isFullscreenRef = useRef(false);
+  const gestureLayerRef = useRef<HTMLDivElement>(null);
   const documentGestureCleanupRef = useRef<(() => void) | null>(null);
 
   const [playing, setPlaying] = useState(false);
@@ -226,7 +228,9 @@ export function VideoPlayer({
 
   const activeSourceUrl = useMemo(() => {
     if (qualityOptions.length === 0) return null;
-    if (selectedQuality === 'auto') return qualityOptions[0].url;
+    if (selectedQuality === 'auto') {
+      return pickAutoQualityOption(qualityOptions)?.url ?? qualityOptions[0].url;
+    }
     return (
       qualityOptions.find((q) => q.label === selectedQuality)?.url ??
       qualityOptions[0].url
@@ -235,10 +239,13 @@ export function VideoPlayer({
 
   const activeQualityLabel = useMemo(() => {
     if (selectedQuality === 'auto') {
-      return qualityOptions[0] ? `Auto (${qualityOptions[0].label})` : 'Auto';
+      const auto = pickAutoQualityOption(qualityOptions);
+      return auto ? `Auto (${auto.label})` : 'Auto';
     }
     return selectedQuality;
   }, [qualityOptions, selectedQuality]);
+
+  const posterUrl = video.thumbnailUrl ?? video.posterUrl ?? undefined;
 
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
@@ -294,6 +301,7 @@ export function VideoPlayer({
   }, []);
 
   const getSpeedSwipeThreshold = useCallback(() => {
+    if (isFullscreenRef.current) return 36;
     const width = containerRef.current?.getBoundingClientRect().width ?? window.innerWidth;
     return Math.max(28, Math.min(50, width * 0.065));
   }, []);
@@ -311,9 +319,6 @@ export function VideoPlayer({
       flushPlaybackRate(SPEED_HOLD_RATE);
       setShowSpeedOverlay(true);
       clearHideTimer();
-      if (!isFullscreenRef.current) {
-        setShowControls(true);
-      }
       const el = videoRef.current;
       if (el?.paused) {
         void el.play().catch(() => undefined);
@@ -334,9 +339,10 @@ export function VideoPlayer({
           : Math.ceil(deltaX / threshold);
       if (steps === g.lastStep) return;
       g.lastStep = steps;
-      applyPlaybackRate(g.startRate + steps * SPEED_STEP);
+      const nextRate = snapSpeed(g.startRate + steps * SPEED_STEP);
+      flushPlaybackRate(nextRate);
     },
-    [applyPlaybackRate, getSpeedSwipeThreshold],
+    [flushPlaybackRate, getSpeedSwipeThreshold],
   );
 
   const getPointerLocal = useCallback((clientX: number, clientY: number): LocalPointer => {
@@ -420,7 +426,7 @@ export function VideoPlayer({
       g.active = false;
 
       try {
-        e.currentTarget.setPointerCapture(pointerId);
+        gestureLayerRef.current?.setPointerCapture(pointerId);
       } catch {
         // ignore
       }
@@ -446,7 +452,7 @@ export function VideoPlayer({
 
         if (
           !gesture.active &&
-          Math.abs(deltaY) > HOLD_CANCEL_PX &&
+          Math.abs(deltaY) > (isFullscreenRef.current ? 32 : HOLD_CANCEL_PX) &&
           Math.abs(deltaY) > Math.abs(deltaX) * 1.5
         ) {
           if (gesture.holdTimer) {
@@ -473,8 +479,9 @@ export function VideoPlayer({
         endSpeedGesture();
 
         try {
-          if (e.currentTarget.hasPointerCapture(pointerId)) {
-            e.currentTarget.releasePointerCapture(pointerId);
+          const layer = gestureLayerRef.current;
+          if (layer?.hasPointerCapture(pointerId)) {
+            layer.releasePointerCapture(pointerId);
           }
         } catch {
           // ignore
@@ -510,23 +517,51 @@ export function VideoPlayer({
         }
       }, SPEED_HOLD_MS);
 
+      let usedPointerEvents = false;
+
       const onDocMove = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return;
+        usedPointerEvents = true;
         processMove(ev.clientX, ev.clientY, () => ev.preventDefault());
       };
 
       const onDocEnd = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return;
+        usedPointerEvents = true;
         processEnd(ev.clientX, ev.clientY);
+      };
+
+      const onTouchMove = (ev: TouchEvent) => {
+        if (usedPointerEvents) return;
+        const touch =
+          Array.from(ev.touches).find((t) => t.identifier === pointerId) ??
+          (ev.touches.length === 1 ? ev.touches[0] : undefined);
+        if (!touch) return;
+        processMove(touch.clientX, touch.clientY, () => ev.preventDefault());
+      };
+
+      const onTouchEnd = (ev: TouchEvent) => {
+        if (usedPointerEvents) return;
+        const touch =
+          Array.from(ev.changedTouches).find((t) => t.identifier === pointerId) ??
+          (ev.changedTouches.length === 1 ? ev.changedTouches[0] : undefined);
+        if (!touch) return;
+        processEnd(touch.clientX, touch.clientY);
       };
 
       document.addEventListener('pointermove', onDocMove, { passive: false });
       document.addEventListener('pointerup', onDocEnd);
       document.addEventListener('pointercancel', onDocEnd);
+      document.addEventListener('touchmove', onTouchMove, { passive: false });
+      document.addEventListener('touchend', onTouchEnd);
+      document.addEventListener('touchcancel', onTouchEnd);
       documentGestureCleanupRef.current = () => {
         document.removeEventListener('pointermove', onDocMove);
         document.removeEventListener('pointerup', onDocEnd);
         document.removeEventListener('pointercancel', onDocEnd);
+        document.removeEventListener('touchmove', onTouchMove);
+        document.removeEventListener('touchend', onTouchEnd);
+        document.removeEventListener('touchcancel', onTouchEnd);
       };
     },
     [
@@ -546,6 +581,10 @@ export function VideoPlayer({
 
     setPlaybackError(null);
     setIsStarting(true);
+
+    if (el.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+      el.preload = 'auto';
+    }
 
     try {
       await el.play();
@@ -996,6 +1035,13 @@ export function VideoPlayer({
     setIsStarting(false);
     flushPlaybackRate(SPEED_DEFAULT);
     setShowSpeedOverlay(false);
+
+    const el = videoRef.current;
+    if (!el || !activeSourceUrl) return;
+    if (el.getAttribute('src') === activeSourceUrl) return;
+    el.src = activeSourceUrl;
+    el.preload = 'metadata';
+    el.load();
   }, [activeSourceUrl, flushPlaybackRate]);
 
   // Clear stuck loading state if playback never starts.
@@ -1043,15 +1089,14 @@ export function VideoPlayer({
     >
       <video
         ref={videoRef}
-        key={activeSourceUrl}
         src={activeSourceUrl}
         className={cn(
           'pointer-events-none absolute inset-0 h-full w-full',
           isFullscreen || pseudoFullscreen ? 'object-contain' : 'object-cover sm:object-contain',
         )}
         playsInline
-        preload="auto"
-        poster={video.posterUrl ?? video.thumbnailUrl ?? undefined}
+        preload="metadata"
+        poster={posterUrl}
         onPlay={() => {
           setPlaying(true);
           setIsBuffering(false);
@@ -1101,8 +1146,9 @@ export function VideoPlayer({
         }}
       />
 
-      {/* Full-area gesture capture */}
+      {/* Full-area gesture capture — receives touches in chrome gaps via pointer-events-none on controls */}
       <div
+        ref={gestureLayerRef}
         className={cn(
           'absolute inset-0 z-10',
           isFullscreen || pseudoFullscreen ? 'touch-none' : 'touch-manipulation',
@@ -1211,22 +1257,19 @@ export function VideoPlayer({
         </button>
       )}
 
-      {/* Bottom chrome — progress bar pinned to bottom edge */}
+      {/* Bottom chrome — pointer-events-none so gestures pass through; buttons stay interactive */}
       <div
         className={cn(
-          'absolute inset-x-0 bottom-0 z-20 transition-opacity duration-200',
-          controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
+          'pointer-events-none absolute inset-x-0 bottom-0 z-20 transition-opacity duration-200',
+          controlsVisible ? 'opacity-100' : 'opacity-0',
         )}
-        onPointerDown={(e) => e.stopPropagation()}
-        onPointerUp={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="bg-gradient-to-t from-black/90 via-black/50 to-transparent px-2 pt-4 pb-0 sm:px-3 sm:pt-5">
           <div className="flex items-center gap-0.5 sm:gap-1">
             <button
               type="button"
               onClick={togglePlay}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-white active:bg-white/15"
+              className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full text-white active:bg-white/15"
               aria-label={playing ? 'Pause' : 'Play'}
             >
               {playing ? (
@@ -1239,7 +1282,7 @@ export function VideoPlayer({
             <button
               type="button"
               onClick={() => seekRelative(-SEEK_SECONDS)}
-              className="hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
+              className="pointer-events-auto hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
               aria-label={`Rewind ${SEEK_SECONDS} seconds`}
             >
               <SkipBack className="h-4 w-4" />
@@ -1248,7 +1291,7 @@ export function VideoPlayer({
             <button
               type="button"
               onClick={() => seekRelative(SEEK_SECONDS)}
-              className="hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
+              className="pointer-events-auto hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
               aria-label={`Forward ${SEEK_SECONDS} seconds`}
             >
               <SkipForward className="h-4 w-4" />
@@ -1270,7 +1313,7 @@ export function VideoPlayer({
                 el.muted = !el.muted;
                 setMuted(el.muted);
               }}
-              className="hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
+              className="pointer-events-auto hidden h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/10 sm:flex"
               aria-label={muted ? 'Unmute' : 'Mute'}
             >
               {muted || volume === 0 ? (
@@ -1295,12 +1338,12 @@ export function VideoPlayer({
                 setVolume(v);
                 setMuted(v === 0);
               }}
-              className="hidden h-1 w-16 accent-red-500 sm:block"
+              className="pointer-events-auto hidden h-1 w-16 accent-red-500 sm:block"
               aria-label="Volume"
             />
 
             {qualityOptions.length > 0 && (
-              <div className="relative">
+              <div className="pointer-events-auto relative">
                 <button
                   type="button"
                   onClick={() => {
@@ -1353,7 +1396,7 @@ export function VideoPlayer({
             <button
               type="button"
               onClick={handleFullscreenClick}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-white active:bg-white/15"
+              className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full text-white active:bg-white/15"
               aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             >
               {isFullscreen ? (
@@ -1369,7 +1412,7 @@ export function VideoPlayer({
         <div
           data-progress
           className={cn(
-            'relative w-full cursor-pointer touch-none',
+            'pointer-events-auto relative w-full cursor-pointer touch-none',
             isFullscreen || pseudoFullscreen
               ? 'h-5 pb-[env(safe-area-inset-bottom)]'
               : 'h-3.5',

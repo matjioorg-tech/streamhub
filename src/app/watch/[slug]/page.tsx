@@ -33,7 +33,11 @@ export default function WatchPage({
     }
   };
 
-  if (isLoading) {
+  const hasPlayback =
+    Boolean(displayVideo?.cdnUrl) ||
+    Boolean(displayVideo?.qualities && displayVideo.qualities.length > 0);
+
+  if (isLoading && !hasPlayback) {
     return (
       <PageLayout>
         <div className="animate-pulse space-y-4">

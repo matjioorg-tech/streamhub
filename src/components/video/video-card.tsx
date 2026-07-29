@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
+import { useQueryClient } from '@tanstack/react-query';
 import type { Video } from '@/lib/api/types';
 import { formatDuration, formatViews } from '@/lib/utils';
+import { prefetchVideoBySlug } from '@/lib/video-cache';
 import { AdminVideoEditButton } from '@/components/admin/admin-video-edit-button';
 import { useIsAdmin } from '@/hooks/use-is-admin';
 
@@ -15,11 +17,21 @@ interface VideoCardProps {
 
 export function VideoCard({ video, adminEditable = false, onVideoUpdated }: VideoCardProps) {
   const isAdmin = useIsAdmin();
+  const queryClient = useQueryClient();
   const showAdminActions = adminEditable && isAdmin;
+
+  const prefetchWatch = () => prefetchVideoBySlug(queryClient, video.slug);
 
   return (
     <div className="group relative">
-      <Link href={`/watch/${video.slug}`} className="block">
+      <Link
+        href={`/watch/${video.slug}`}
+        prefetch
+        className="block"
+        onMouseEnter={prefetchWatch}
+        onFocus={prefetchWatch}
+        onTouchStart={prefetchWatch}
+      >
         <div className="relative aspect-video overflow-hidden rounded-xl bg-zinc-800 ring-1 ring-zinc-800 transition-all group-hover:ring-zinc-700">
           {video.thumbnailUrl ? (
             <Image
