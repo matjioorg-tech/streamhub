@@ -36,14 +36,14 @@ const SEEK_SECONDS = 10;
 const DOUBLE_TAP_MS = 320;
 const CONTROLS_HIDE_MS = 3500;
 const SPEED_MIN = 0.5;
-const SPEED_MAX = 2;
+const SPEED_MAX = 4;
 const SPEED_DEFAULT = 1;
 const SPEED_HOLD_RATE = 2;
 const SPEED_STEP = 0.5;
 const SPEED_SWIPE_PX = 48;
 const SPEED_HOLD_MS = 180;
-const SPEED_STEP_INDEXES = [0.5, 1, 1.5, 2] as const;
-const SPEED_HOLD_INDEX = SPEED_STEP_INDEXES.length - 1;
+const SPEED_STEP_INDEXES = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
+const SPEED_HOLD_INDEX = SPEED_STEP_INDEXES.indexOf(SPEED_HOLD_RATE);
 const TAP_MOVE_THRESHOLD = 10;
 const HOLD_CANCEL_PX = 22;
 const TAP_SUPPRESS_MS = 350;
@@ -557,13 +557,11 @@ export function VideoPlayer({
         !speedGestureRef.current.active &&
         !speedGestureRef.current.holdTimer
       ) {
-        pinch.panning = true;
+        pinch.panning = false;
         pinch.panStartX = e.touches[0].clientX;
         pinch.panStartY = e.touches[0].clientY;
         pinch.panOriginX = videoZoomRef.current.x;
         pinch.panOriginY = videoZoomRef.current.y;
-        setGestureActive(true);
-        pinchBlocksGesturesRef.current = true;
       }
     },
     [cleanupDocumentGesture, endSpeedGesture, zoomEnabled],
@@ -607,10 +605,21 @@ export function VideoPlayer({
         return;
       }
 
-      if (e.touches.length === 1 && pinch.panning && videoZoomRef.current.scale > 1) {
-        e.preventDefault();
+      if (e.touches.length === 1 && videoZoomRef.current.scale > 1) {
+        const speed = speedGestureRef.current;
+        if (speed.active || speed.holdTimer) return;
+
+        const pinch = pinchGestureRef.current;
         const dx = e.touches[0].clientX - pinch.panStartX;
         const dy = e.touches[0].clientY - pinch.panStartY;
+        if (!pinch.panning && Math.hypot(dx, dy) < TAP_MOVE_THRESHOLD) return;
+
+        if (!pinch.panning) {
+          pinch.panning = true;
+          setGestureActive(true);
+        }
+
+        e.preventDefault();
         const { x, y } = clampPan(
           videoZoomRef.current.scale,
           pinch.panOriginX + dx,
@@ -671,12 +680,6 @@ export function VideoPlayer({
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (isScrubbingRef.current) return;
       if (pinchBlocksGesturesRef.current || pinchGestureRef.current.active) return;
-      if (
-        e.pointerType === 'touch' &&
-        videoZoomRef.current.scale > VIDEO_ZOOM_MIN + 0.02
-      ) {
-        return;
-      }
 
       cleanupDocumentGesture();
 
@@ -817,6 +820,10 @@ export function VideoPlayer({
       const onTouchMove = (ev: TouchEvent) => {
         const gesture = speedGestureRef.current;
         if (gesture.active && ev.touches.length >= 1) {
+          processMove(ev.touches[0].clientX, ev.touches[0].clientY, () => ev.preventDefault());
+          return;
+        }
+        if (gesture.holdTimer && ev.touches.length >= 1) {
           processMove(ev.touches[0].clientX, ev.touches[0].clientY, () => ev.preventDefault());
           return;
         }
