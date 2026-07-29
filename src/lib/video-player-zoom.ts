@@ -53,6 +53,29 @@ export function clampPan(
   };
 }
 
+/** Zoom from the center of the viewport (stable in letterboxed fullscreen). */
+export function applyCenterZoom(
+  startScale: number,
+  nextScale: number,
+  startX: number,
+  startY: number,
+  containerWidth: number,
+  containerHeight: number,
+): VideoZoomTransform {
+  const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
+  if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
+
+  const ratio = startScale > 0 ? scale / startScale : 1;
+  const clamped = clampPan(
+    scale,
+    startX * ratio,
+    startY * ratio,
+    containerWidth,
+    containerHeight,
+  );
+  return { scale, ...clamped };
+}
+
 /** Zoom toward the pinch focal point (YouTube-style). */
 export function applyFocalZoom(
   containerRect: DOMRect,

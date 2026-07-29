@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { Video } from '@/lib/api/types';
 import { formatDuration, formatViews } from '@/lib/utils';
 import { prefetchVideoBySlug } from '@/lib/video-cache';
+import { markVideoAutoplayIntent } from '@/lib/video-autoplay';
 import { AdminVideoEditButton } from '@/components/admin/admin-video-edit-button';
 import { useIsAdmin } from '@/hooks/use-is-admin';
 
@@ -28,6 +29,7 @@ export function VideoCard({ video, adminEditable = false, onVideoUpdated }: Vide
         href={`/watch/${video.slug}`}
         prefetch
         className="block"
+        onPointerDown={() => markVideoAutoplayIntent(video.slug)}
         onMouseEnter={prefetchWatch}
         onFocus={prefetchWatch}
         onTouchStart={prefetchWatch}

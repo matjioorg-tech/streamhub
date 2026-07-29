@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import {
   Play,
   Pause,
@@ -18,12 +18,12 @@ import type { Video, VideoQualityOption } from '@/lib/api/types';
 import { cn, formatDuration } from '@/lib/utils';
 import { pickAutoQualityOption } from '@/lib/video-quality';
 import { primeVideoStream } from '@/lib/video-cache';
+import { takeVideoAutoplayIntent } from '@/lib/video-autoplay';
 import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
 import {
   DEFAULT_VIDEO_ZOOM,
-  applyFocalZoom,
+  applyCenterZoom,
   formatZoomPercent,
-  getTouchCenter,
   getTouchDistance,
   clampPan,
   snapVideoZoom,
@@ -127,6 +127,7 @@ interface VideoPlayerProps {
   video: Video;
   initialProgress?: number;
   onProgress?: (seconds: number) => void;
+  autoPlay?: boolean;
 }
 
 function isIosDevice(): boolean {
@@ -203,6 +204,7 @@ export function VideoPlayer({
   video,
   initialProgress = 0,
   onProgress,
+  autoPlay = false,
 }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -254,7 +256,15 @@ export function VideoPlayer({
   const [isBuffering, setIsBuffering] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const pendingPlayRef = useRef(false);
+  const autoplayPendingRef = useRef(false);
   const isScrubbingRef = useRef(false);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const scrubSessionRef = useRef({
+    wasPlaying: false,
+    pointerId: -1,
+    target: null as HTMLElement | null,
+    docCleanup: null as (() => void) | null,
+  });
   const [selectedQuality, setSelectedQuality] = useState<string>('auto');
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(SPEED_DEFAULT);
@@ -590,16 +600,14 @@ export function VideoPlayer({
         const distance = getTouchDistance(e.touches);
         if (pinch.startDistance <= 0) return;
 
-        const center = getTouchCenter(e.touches);
         const nextScale = pinch.startScale * (distance / pinch.startDistance);
-        const updated = applyFocalZoom(
-          rect,
+        const updated = applyCenterZoom(
           pinch.startScale,
           nextScale,
-          center.x,
-          center.y,
           pinch.startX,
           pinch.startY,
+          rect.width,
+          rect.height,
         );
         applyVideoZoom(updated);
         return;
@@ -922,6 +930,17 @@ export function VideoPlayer({
     }
   }, []);
 
+  useLayoutEffect(() => {
+    autoplayPendingRef.current = autoPlay || takeVideoAutoplayIntent(video.slug);
+  }, [autoPlay, video.slug]);
+
+  useEffect(() => {
+    if (!autoplayPendingRef.current || !activeSourceUrl) return;
+
+    autoplayPendingRef.current = false;
+    void attemptPlay();
+  }, [activeSourceUrl, attemptPlay, video.slug]);
+
   const resumePlaybackIfNeeded = useCallback(() => {
     const el = videoRef.current;
     if (!el || !resumeAfterFsRef.current) return;
@@ -1159,15 +1178,6 @@ export function VideoPlayer({
     isFullscreenRef.current = isFullscreen || pseudoFullscreen;
   }, [isFullscreen, pseudoFullscreen]);
 
-  useEffect(() => {
-    return () => {
-      cleanupDocumentGesture();
-      if (overlayRafRef.current !== null) {
-        cancelAnimationFrame(overlayRafRef.current);
-      }
-    };
-  }, [cleanupDocumentGesture]);
-
   const updateProgressFromPointer = useCallback(
     (clientX: number) => {
       const el = videoRef.current;
@@ -1182,6 +1192,106 @@ export function VideoPlayer({
     },
     [],
   );
+
+  const endScrubSession = useCallback(() => {
+    if (!isScrubbingRef.current) return;
+
+    const session = scrubSessionRef.current;
+    const shouldResume = session.wasPlaying;
+
+    isScrubbingRef.current = false;
+    setIsScrubbing(false);
+    setGestureActive(false);
+
+    session.docCleanup?.();
+    session.docCleanup = null;
+
+    const target = session.target;
+    const pointerId = session.pointerId;
+    if (target && pointerId >= 0) {
+      try {
+        if (target.hasPointerCapture(pointerId)) {
+          target.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    session.target = null;
+    session.pointerId = -1;
+    session.wasPlaying = false;
+
+    const el = videoRef.current;
+    if (el) {
+      setCurrentTime(el.currentTime);
+      if (shouldResume) {
+        void el
+          .play()
+          .then(() => {
+            setPlaying(true);
+            setIsBuffering(false);
+            setIsStarting(false);
+          })
+          .catch(() => undefined);
+      }
+    }
+
+    if (shouldResume) {
+      scheduleHideControls();
+    }
+  }, [scheduleHideControls]);
+
+  const beginScrubSession = useCallback(
+    (clientX: number, pointerId: number, target: HTMLElement) => {
+      const el = videoRef.current;
+      if (!el) return;
+
+      scrubSessionRef.current.wasPlaying = !el.paused;
+      scrubSessionRef.current.pointerId = pointerId;
+      scrubSessionRef.current.target = target;
+
+      isScrubbingRef.current = true;
+      setIsScrubbing(true);
+      setGestureActive(true);
+      setShowControls(true);
+      clearHideTimer();
+      updateProgressFromPointer(clientX);
+
+      try {
+        target.setPointerCapture(pointerId);
+      } catch {
+        // ignore
+      }
+
+      const onDocEnd = () => {
+        endScrubSession();
+      };
+
+      document.addEventListener('pointerup', onDocEnd);
+      document.addEventListener('pointercancel', onDocEnd);
+      scrubSessionRef.current.docCleanup = () => {
+        document.removeEventListener('pointerup', onDocEnd);
+        document.removeEventListener('pointercancel', onDocEnd);
+      };
+    },
+    [clearHideTimer, endScrubSession, updateProgressFromPointer],
+  );
+
+  useEffect(() => {
+    return () => {
+      endScrubSession();
+    };
+  }, [endScrubSession]);
+
+  useEffect(() => {
+    return () => {
+      cleanupDocumentGesture();
+      if (overlayRafRef.current !== null) {
+        cancelAnimationFrame(overlayRafRef.current);
+      }
+    };
+  }, [cleanupDocumentGesture]);
 
   const updateFsPortraitChromeInset = useCallback(() => {
     if (!pseudoFullscreen || !isPortrait()) {
@@ -1490,6 +1600,7 @@ export function VideoPlayer({
   const controlsVisible = showControls || !playing;
   const inFullscreen = isFullscreen || pseudoFullscreen;
   const liftChromeInPortraitFs = pseudoFullscreen && fsPortraitChromeBottom > 0;
+  const progressBarVisible = controlsVisible || inFullscreen || isScrubbing;
 
   const playerMarkup = (
     <div
@@ -1505,9 +1616,9 @@ export function VideoPlayer({
     >
       <div className="absolute inset-0 overflow-hidden">
         <div
-          className="h-full w-full will-change-transform"
+          className="absolute left-1/2 top-1/2 h-full w-full will-change-transform"
           style={{
-            transform: `translate3d(${videoZoom.x}px, ${videoZoom.y}px, 0) scale(${videoZoom.scale})`,
+            transform: `translate(-50%, -50%) translate3d(${videoZoom.x}px, ${videoZoom.y}px, 0) scale(${videoZoom.scale})`,
             transformOrigin: 'center center',
             transition: isPinching ? undefined : 'transform 0.18s ease-out',
           }}
@@ -1541,9 +1652,14 @@ export function VideoPlayer({
               }
             }}
             onWaiting={() => {
+              if (isScrubbingRef.current) return;
               if (!videoRef.current?.paused) {
                 setIsBuffering(true);
               }
+            }}
+            onSeeked={() => {
+              if (isScrubbingRef.current) return;
+              setIsBuffering(false);
             }}
             onPlaying={() => {
               setIsBuffering(false);
@@ -1606,7 +1722,7 @@ export function VideoPlayer({
         }}
       />
 
-      {(isStarting || isBuffering) && !playbackError && (
+      {(isStarting || isBuffering) && !playbackError && !isScrubbing && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/40">
           <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/20 border-t-white" />
         </div>
@@ -1693,17 +1809,20 @@ export function VideoPlayer({
         </button>
       )}
 
-      {/* Bottom chrome — controls sit above gesture layer (z-20) */}
+      {/* Bottom chrome — progress stays visible in fullscreen */}
       <div
-        className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 z-20 transition-[opacity,bottom] duration-200',
-          controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
-        )}
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-20"
         style={
           liftChromeInPortraitFs ? { bottom: `${fsPortraitChromeBottom}px` } : undefined
         }
       >
-        <div className="bg-gradient-to-t from-black/90 via-black/50 to-transparent px-2 pt-4 pb-0 sm:px-3 sm:pt-5">
+        <div
+          className={cn(
+            'transition-opacity duration-200',
+            controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
+          )}
+        >
+          <div className="bg-gradient-to-t from-black/90 via-black/50 to-transparent px-2 pt-4 pb-0 sm:px-3 sm:pt-5">
           <div className="flex items-center gap-0.5 sm:gap-1">
             <button
               type="button"
@@ -1846,44 +1965,47 @@ export function VideoPlayer({
             </button>
           </div>
         </div>
+        </div>
 
-        {/* Progress bar — pinned to bottom edge */}
+        {/* Progress bar — always visible in fullscreen */}
         <div
           data-progress
           className={cn(
-            'pointer-events-auto relative w-full cursor-pointer touch-none',
+            'pointer-events-auto relative w-full cursor-pointer touch-none transition-opacity duration-200',
             inFullscreen
               ? liftChromeInPortraitFs
-                ? 'h-4'
-                : 'h-5 pb-[max(0.25rem,env(safe-area-inset-bottom))]'
+                ? 'h-5'
+                : 'h-6 pb-[max(0.35rem,env(safe-area-inset-bottom))]'
               : 'h-3.5',
+            progressBarVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
           onPointerDown={(e) => {
-            isScrubbingRef.current = true;
-            setGestureActive(true);
-            updateProgressFromPointer(e.clientX);
-            e.currentTarget.setPointerCapture(e.pointerId);
-            setShowControls(true);
-            clearHideTimer();
+            e.stopPropagation();
+            beginScrubSession(e.clientX, e.pointerId, e.currentTarget);
           }}
           onPointerMove={(e) => {
-            if (isScrubbingRef.current) updateProgressFromPointer(e.clientX);
+            if (isScrubbingRef.current) {
+              e.preventDefault();
+              updateProgressFromPointer(e.clientX);
+            }
           }}
           onPointerUp={(e) => {
-            isScrubbingRef.current = false;
-            setGestureActive(false);
-            e.currentTarget.releasePointerCapture(e.pointerId);
-            if (playing) scheduleHideControls();
+            e.stopPropagation();
+            endScrubSession();
+          }}
+          onPointerCancel={(e) => {
+            e.stopPropagation();
+            endScrubSession();
           }}
         >
           <div
             className={cn(
-              'absolute inset-x-3 bottom-0 overflow-hidden rounded-full bg-white/20 sm:inset-x-4',
-              isFullscreen || pseudoFullscreen ? 'h-[3px]' : 'h-[2px]',
+              'absolute inset-x-3 bottom-0 overflow-hidden rounded-full bg-white/30 sm:inset-x-4',
+              inFullscreen ? 'h-1' : 'h-[2px]',
             )}
           >
             <div
-              className="absolute inset-y-0 left-0 bg-white/25"
+              className="absolute inset-y-0 left-0 bg-white/35"
               style={{ width: `${buffered}%` }}
             />
             <div
@@ -1893,8 +2015,9 @@ export function VideoPlayer({
           </div>
           <div
             className={cn(
-              'absolute bottom-0 h-2.5 w-2.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-red-500 shadow transition-opacity',
-              controlsVisible ? 'opacity-100' : 'opacity-0',
+              'absolute bottom-0 h-3 w-3 -translate-x-1/2 translate-y-1/2 rounded-full bg-red-500 shadow-md transition-opacity',
+              progressBarVisible || isScrubbing ? 'opacity-100' : 'opacity-0',
+              isScrubbing && 'scale-125',
             )}
             style={{ left: `${progress}%` }}
           />
