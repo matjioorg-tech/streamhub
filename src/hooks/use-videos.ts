@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { videosApi, type VideoQueryParams } from '@/lib/api';
-import { findVideoInCache } from '@/lib/video-cache';
+import { findVideoInCache, getVideoStreamUrl } from '@/lib/video-cache';
 
 export function useVideos(params?: VideoQueryParams, options?: { enabled?: boolean }) {
   return useQuery({
@@ -32,9 +32,14 @@ export function useVideo(slug: string) {
     queryKey: ['video', slug],
     queryFn: () => videosApi.getBySlug(slug),
     enabled: !!slug,
-    staleTime: 5 * 60 * 1000,
-    // Refresh signed URLs in background — player keeps the same stream key while buffering.
-    refetchOnMount: true,
+    staleTime: 45 * 60 * 1000,
+    // Skip ~6s watch API round-trip when list/trending cache already has a signed stream URL.
+    refetchOnMount: (query) => {
+      const cached = findVideoInCache(queryClient, slug);
+      if (cached && getVideoStreamUrl(cached)) return false;
+      const current = query.state.data;
+      return !(current && getVideoStreamUrl(current));
+    },
     placeholderData: () => findVideoInCache(queryClient, slug),
   });
 }

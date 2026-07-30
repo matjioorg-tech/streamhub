@@ -1077,7 +1077,6 @@ export function VideoPlayer({
     const sameStream =
       mountedStreamKeyRef.current !== null && mountedStreamKeyRef.current === nextStreamKey;
 
-    // API refetch rotates signed URL query params — never restart playback for the same object.
     if (sameStream) {
       releaseWarmVideo(activeSourceUrl);
       if (shouldAutoplay && el.paused) {
@@ -1103,10 +1102,9 @@ export function VideoPlayer({
     }
 
     autoplayPendingRef.current = false;
-
     setPlaybackError(null);
     setIsStarting(true);
-    setIsBuffering(true);
+    setIsBuffering(el.readyState < HTMLMediaElement.HAVE_FUTURE_DATA);
     pendingPlayRef.current = true;
 
     void el
@@ -1961,6 +1959,12 @@ export function VideoPlayer({
             playsInline
             preload="auto"
             poster={posterUrl}
+            onLoadedMetadata={(e) => {
+              setDuration(e.currentTarget.duration);
+              if (pendingPlayRef.current && e.currentTarget.paused) {
+                void e.currentTarget.play().catch(() => void attemptPlay());
+              }
+            }}
             onLoadedData={() => {
               setIsStarting(false);
               if (pendingPlayRef.current) {
@@ -2000,7 +2004,6 @@ export function VideoPlayer({
               setIsStarting(false);
               pendingPlayRef.current = false;
             }}
-            onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
             onTimeUpdate={(e) => {
               if (!isScrubbingRef.current) {
                 setCurrentTime(e.currentTarget.currentTime);

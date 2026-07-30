@@ -3,7 +3,9 @@ import { videosApi } from '@/lib/api';
 import type { PaginatedResponse, Video } from '@/lib/api/types';
 
 const CDN_ORIGIN = 'https://media.telnewstreams.dpdns.org';
-const RANGE_WARM_BYTES = 512 * 1024; // first 512 KB — enough for moov + first frames on faststart MP4
+/** Cover large moov atoms on long videos (~2–3 MB). */
+const RANGE_WARM_BYTES = 3 * 1024 * 1024;
+const RANGE_CHUNK = 512 * 1024;
 
 function hasPlaybackUrl(video: Video): boolean {
   return Boolean(video.cdnUrl || (video.qualities && video.qualities.length > 0));
@@ -53,23 +55,28 @@ function prefetchRange(url: string, streamKey: string): void {
   if (rangeWarmed.has(streamKey)) return;
   rangeWarmed.add(streamKey);
 
-  void fetch(url, {
-    method: 'GET',
-    headers: { Range: `bytes=0-${RANGE_WARM_BYTES - 1}` },
-    mode: 'cors',
-    credentials: 'omit',
-    priority: 'high',
-  }).catch(() => {
-    rangeWarmed.delete(streamKey);
-  });
+  const chunks = Math.ceil(RANGE_WARM_BYTES / RANGE_CHUNK);
+  for (let i = 0; i < chunks; i++) {
+    const start = i * RANGE_CHUNK;
+    const end = Math.min(RANGE_WARM_BYTES - 1, start + RANGE_CHUNK - 1);
+    void fetch(url, {
+      method: 'GET',
+      headers: { Range: `bytes=${start}-${end}` },
+      mode: 'cors',
+      credentials: 'omit',
+      priority: 'high',
+    }).catch(() => {
+      if (i === 0) rangeWarmed.delete(streamKey);
+    });
+  }
 }
 
-/** Hidden `<video>` starts the media pipeline before navigation finishes. */
+/** Hidden `<video>` — metadata only so it doesn't compete with the main player download. */
 function primeMediaElement(url: string, streamKey: string): void {
   if (warmElements.has(streamKey)) return;
 
   const el = document.createElement('video');
-  el.preload = 'auto';
+  el.preload = 'metadata';
   el.muted = true;
   el.playsInline = true;
   el.setAttribute('playsinline', '');
@@ -83,22 +90,38 @@ function primeMediaElement(url: string, streamKey: string): void {
   const timer = setTimeout(() => {
     el.remove();
     warmElements.delete(streamKey);
-  }, 60_000);
+  }, 90_000);
 
   warmElements.set(streamKey, { el, timer });
 }
 
-/** Stop hidden warm element once the watch player takes over the same stream. */
+/** Take over a pre-warmed element so buffered bytes aren't thrown away. */
+export function adoptWarmVideo(url: string): HTMLVideoElement | null {
+  const streamKey = getStreamKey(url);
+  const session = warmElements.get(streamKey);
+  if (!session) return null;
+
+  clearTimeout(session.timer);
+  warmElements.delete(streamKey);
+  session.el.removeAttribute('style');
+  session.el.preload = 'auto';
+  session.el.muted = false;
+  return session.el;
+}
+
+/** Detach warm session but keep fetching so HTTP cache stays hot for the player. */
 export function releaseWarmVideo(url: string): void {
   const streamKey = getStreamKey(url);
   const session = warmElements.get(streamKey);
   if (!session) return;
-  clearTimeout(session.timer);
-  session.el.remove();
   warmElements.delete(streamKey);
+  clearTimeout(session.timer);
+  session.timer = setTimeout(() => {
+    session.el.remove();
+  }, 15_000);
 }
 
-/** Preconnect + range prefetch + hidden video warm — call on card tap/hover. */
+/** Preconnect + parallel range prefetch + metadata warm — call on card tap/hover. */
 export function warmVideoStream(url: string): void {
   if (!url || typeof document === 'undefined') return;
 
@@ -169,6 +192,6 @@ export function prefetchVideoBySlug(queryClient: QueryClient, slug: string): voi
   void queryClient.prefetchQuery({
     queryKey: ['video', slug],
     queryFn: () => videosApi.getBySlug(slug),
-    staleTime: 60_000,
+    staleTime: 45 * 60 * 1000,
   });
 }
