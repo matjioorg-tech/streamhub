@@ -18,7 +18,7 @@ import {
 import type { Video, VideoQualityOption } from '@/lib/api/types';
 import { cn, formatDuration } from '@/lib/utils';
 import { pickAutoQualityOption } from '@/lib/video-quality';
-import { primeVideoStream, getStreamKey } from '@/lib/video-cache';
+import { primeVideoStream, getStreamKey, isBrowserIncompatibleVideo } from '@/lib/video-cache';
 import { takeVideoAutoplayIntent } from '@/lib/video-autoplay';
 import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
 import {
@@ -157,6 +157,8 @@ interface VideoPlayerProps {
   initialProgress?: number;
   onProgress?: (seconds: number) => void;
   autoPlay?: boolean;
+  /** Fetch fresh signed CDN URLs after a playback failure (expired token / bad cache). */
+  onRefreshStream?: () => Promise<Video | null | undefined>;
 }
 
 function isIosDevice(): boolean {
@@ -233,6 +235,7 @@ export function VideoPlayer({
   initialProgress = 0,
   onProgress,
   autoPlay = false,
+  onRefreshStream,
 }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoTransformRef = useRef<HTMLDivElement>(null);
@@ -288,6 +291,7 @@ export function VideoPlayer({
   const autoplayPendingRef = useRef(false);
   const activeSourceUrlRef = useRef<string | null>(null);
   const playbackRetryKeyRef = useRef<string | null>(null);
+  const streamRefreshAttemptedRef = useRef(false);
   const isScrubbingRef = useRef(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const scrubSessionRef = useRef({
@@ -1052,6 +1056,10 @@ export function VideoPlayer({
   useLayoutEffect(() => {
     autoplayPendingRef.current = autoPlay || takeVideoAutoplayIntent(video.slug);
   }, [autoPlay, video.slug]);
+
+  useLayoutEffect(() => {
+    streamRefreshAttemptedRef.current = false;
+  }, [video.slug, video.cdnUrl, video.qualities]);
 
   useLayoutEffect(() => {
     if (!activeSourceUrl) return;
@@ -1856,6 +1864,18 @@ export function VideoPlayer({
     );
   }
 
+  if (isBrowserIncompatibleVideo(video)) {
+    return (
+      <div className="flex aspect-video flex-col items-center justify-center gap-2 rounded-xl bg-zinc-900 px-6 text-center">
+        <AlertCircle className="h-8 w-8 text-amber-400" />
+        <p className="text-sm text-zinc-200">This video format is not supported for playback.</p>
+        <p className="text-xs text-zinc-500">
+          The file needs to be reprocessed to MP4. Ask an admin to run reprocess-stream.
+        </p>
+      </div>
+    );
+  }
+
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const buffered = duration > 0 ? (bufferedEnd / duration) * 100 : 0;
   const controlsVisible = showControls || !playing;
@@ -1970,6 +1990,49 @@ export function VideoPlayer({
               const el = videoRef.current;
               const url = activeSourceUrlRef.current;
               const retryKey = url ? getStreamKey(url) : null;
+
+              if (
+                onRefreshStream &&
+                !streamRefreshAttemptedRef.current
+              ) {
+                streamRefreshAttemptedRef.current = true;
+                setPlaybackError(null);
+                setIsStarting(true);
+                setIsBuffering(true);
+                pendingPlayRef.current = true;
+                void onRefreshStream()
+                  .then((fresh) => {
+                    const freshUrl =
+                      fresh?.cdnUrl ??
+                      fresh?.qualities?.find((q) => q.url)?.url ??
+                      fresh?.qualities?.[0]?.url;
+                    if (freshUrl && el && freshUrl !== el.src) {
+                      playbackRetryKeyRef.current = null;
+                      activeSourceUrlRef.current = freshUrl;
+                      el.src = freshUrl;
+                      primeVideoStream(freshUrl);
+                      void el.play().catch(() => void attemptPlay());
+                      return;
+                    }
+                    throw new Error('No fresh stream URL');
+                  })
+                  .catch(() => {
+                    streamRefreshAttemptedRef.current = false;
+                    if (el && url && playbackRetryKeyRef.current !== retryKey) {
+                      playbackRetryKeyRef.current = retryKey;
+                      el.src = url;
+                      void el.play().catch(() => void attemptPlay());
+                      return;
+                    }
+                    setIsBuffering(false);
+                    setIsStarting(false);
+                    pendingPlayRef.current = false;
+                    setPlaybackError(
+                      'Unable to play this video. Check your connection and try again.',
+                    );
+                  });
+                return;
+              }
 
               if (el && url && playbackRetryKeyRef.current !== retryKey) {
                 playbackRetryKeyRef.current = retryKey;

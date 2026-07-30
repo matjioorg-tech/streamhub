@@ -2,6 +2,8 @@ import type { QueryClient } from '@tanstack/react-query';
 import { videosApi } from '@/lib/api';
 import type { PaginatedResponse, Video } from '@/lib/api/types';
 
+const CDN_ORIGIN = 'https://media.telnewstreams.dpdns.org';
+
 function hasPlaybackUrl(video: Video): boolean {
   return Boolean(video.cdnUrl || (video.qualities && video.qualities.length > 0));
 }
@@ -16,14 +18,8 @@ export function getStreamKey(url: string): string {
   }
 }
 
-/** Hint the browser to prefetch stream metadata (avoid a second full download). */
-export function primeVideoStream(url: string): void {
-  if (!url || typeof document === 'undefined') return;
-
-  const streamKey = getStreamKey(url);
-
-  const existing = document.querySelector(`link[data-video-prime="${streamKey}"]`);
-  if (existing) return;
+function hintCdnConnection(url: string): void {
+  if (typeof document === 'undefined') return;
 
   try {
     const origin = new URL(url).origin;
@@ -38,14 +34,23 @@ export function primeVideoStream(url: string): void {
   } catch {
     // ignore invalid URL
   }
+}
 
-  const link = document.createElement('link');
-  link.rel = 'preload';
-  link.as = 'fetch';
-  link.href = url;
-  link.crossOrigin = 'anonymous';
-  link.setAttribute('data-video-prime', streamKey);
-  document.head.appendChild(link);
+/** Warm CDN connection only — avoid fetch preload competing with the video element. */
+export function primeVideoStream(url: string): void {
+  if (!url || typeof document === 'undefined') return;
+  hintCdnConnection(url);
+  hintCdnConnection(CDN_ORIGIN);
+}
+
+/** MKV/MKV mislabeled uploads — browsers cannot decode in `<video>`. */
+export function isBrowserIncompatibleVideo(video: Pick<Video, 'mimeType'>): boolean {
+  const mime = video.mimeType?.toLowerCase() ?? '';
+  return (
+    mime.includes('matroska') ||
+    mime.includes('mpegts') ||
+    mime.includes('x-msvideo')
+  );
 }
 
 /** Reuse list/search cache so the watch page can render the player before the watch API returns. */
@@ -74,20 +79,18 @@ export function findVideoInCache(queryClient: QueryClient, slug: string): Video 
     }
   }
 
+  const watchCached = queryClient.getQueryData<Video>(['video', slug]);
+  if (watchCached && hasPlaybackUrl(watchCached)) return watchCached;
+
   return undefined;
 }
 
 export function prefetchVideoBySlug(queryClient: QueryClient, slug: string): void {
-  const cached = findVideoInCache(queryClient, slug);
-  const streamUrl =
-    cached?.cdnUrl ?? cached?.qualities?.find((q) => q.url)?.url ?? cached?.qualities?.[0]?.url;
-  if (streamUrl) {
-    primeVideoStream(streamUrl);
-  }
+  primeVideoStream(CDN_ORIGIN);
 
   void queryClient.prefetchQuery({
     queryKey: ['video', slug],
     queryFn: () => videosApi.getBySlug(slug),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
   });
 }

@@ -2,10 +2,11 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { ChevronLeft } from 'lucide-react';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PageLayout } from '@/components/layout/page-layout';
-import { CreatorBrowsePanel } from '@/components/browse/creator-browse-panel';
-import { VideoBrowseToolbar } from '@/components/browse/video-browse-toolbar';
+import { CreatorSelect, CreatorSidebar } from '@/components/browse/creator-browse-panel';
+import { CategoryFilterBar } from '@/components/browse/category-filter-bar';
 import { VideoGrid, VideoGridSkeleton } from '@/components/video/video-grid';
 import { Pagination } from '@/components/ui/pagination';
 import { useCategory, useSubcategories } from '@/hooks/use-categories';
@@ -128,7 +129,7 @@ function CategoryDetailContent() {
         q: debouncedVideoSearch || undefined,
         sort: sort.value !== 'newest' ? sort.value : undefined,
       },
-      { scrollToVideos: !!creatorName },
+      { scrollToVideos: false },
     );
   };
 
@@ -153,43 +154,33 @@ function CategoryDetailContent() {
     );
   };
 
-  const videosTitle = selectedSub
-    ? `${selectedSub} — ${category?.name ?? ''}`
-    : `All ${category?.name ?? ''} videos`;
+  const listTitle = selectedSub ?? category?.name ?? 'Videos';
 
   return (
     <PageLayout>
-      <div className="mb-5 sm:mb-6">
-        <Link href="/categories" className="text-xs text-zinc-500 transition hover:text-zinc-300">
-          ← Browse
+      <div className="mb-3 flex items-center gap-2">
+        <Link
+          href="/categories"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-900 hover:text-white"
+          aria-label="Back to categories"
+        >
+          <ChevronLeft className="h-5 w-5" />
         </Link>
-        <h1 className="mt-2 text-xl font-bold tracking-tight text-white sm:text-2xl">
-          {categoryLoading ? 'Loading...' : category?.name ?? 'Category'}
-        </h1>
-        {category?.description && (
-          <p className="mt-1 max-w-2xl text-sm text-zinc-500">{category.description}</p>
-        )}
-        {selectedSub ? (
-          <p className="mt-2 inline-flex items-center gap-2 rounded-full bg-red-500/10 px-3 py-1 text-xs text-red-300 ring-1 ring-red-500/20 sm:text-sm">
-            <span className="text-zinc-400">{creatorLabel}:</span>
-            <span className="font-medium text-white">{selectedSub}</span>
-            <Link
-              href={buildCreatorHref()}
-              className="ml-1 text-red-400 hover:text-red-300"
-            >
-              Clear
-            </Link>
-          </p>
-        ) : (
-          <p className="mt-1.5 text-xs text-zinc-500 sm:text-sm">
-            Pick a {creatorLabel.toLowerCase()} or browse all videos
-          </p>
-        )}
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-base font-semibold text-white sm:text-lg">
+            {categoryLoading ? 'Loading…' : category?.name ?? 'Category'}
+          </h1>
+          {selectedSub ? (
+            <p className="truncate text-xs text-zinc-500">
+              {creatorLabel}: <span className="text-zinc-300">{selectedSub}</span>
+            </p>
+          ) : null}
+        </div>
       </div>
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         {hasCreators && (
-          <CreatorBrowsePanel
+          <CreatorSidebar
             creatorLabel={creatorLabel}
             subcategories={subcategories ?? []}
             selectedSub={selectedSub}
@@ -201,23 +192,34 @@ function CategoryDetailContent() {
           />
         )}
 
-        <div ref={videosRef} className="min-w-0 flex-1 scroll-mt-24">
-          <VideoBrowseToolbar
+        <div ref={videosRef} className="min-w-0 flex-1 scroll-mt-28">
+          <CategoryFilterBar
             sort={sort}
             onSortChange={handleSortChange}
             videoSearch={videoSearch}
             onVideoSearchChange={setVideoSearch}
             total={meta?.total}
             isLoading={videosLoading || videosFetching}
+            creatorSlot={
+              hasCreators ? (
+                <CreatorSelect
+                  creatorLabel={creatorLabel}
+                  subcategories={subcategories ?? []}
+                  selectedSub={selectedSub}
+                  isLoading={subcategoriesLoading}
+                  onSelect={handleCreatorSelect}
+                />
+              ) : undefined
+            }
           />
 
           {videosLoading ? (
-            <VideoGridSkeleton title={videosTitle} />
+            <VideoGridSkeleton title={listTitle} />
           ) : (
             <>
-              <VideoGrid videos={videoList} title={videosTitle} />
+              <VideoGrid videos={videoList} />
               {meta && meta.totalPages > 1 && (
-                <Pagination meta={meta} onPageChange={handlePageChange} className="mt-8" />
+                <Pagination meta={meta} onPageChange={handlePageChange} className="mt-6" />
               )}
             </>
           )}
@@ -232,7 +234,7 @@ export default function CategoryDetailPage() {
     <Suspense
       fallback={
         <PageLayout>
-          <div className="text-zinc-400">Loading category...</div>
+          <div className="text-sm text-zinc-500">Loading category…</div>
         </PageLayout>
       }
     >

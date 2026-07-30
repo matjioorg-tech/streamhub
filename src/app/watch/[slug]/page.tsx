@@ -58,6 +58,11 @@ export default function WatchPage({
     }
   };
 
+  const refreshStream = async (): Promise<Video | null | undefined> => {
+    const result = await refetch();
+    return result.data ?? null;
+  };
+
   const hasPlayback =
     Boolean(displayVideo?.cdnUrl) ||
     Boolean(displayVideo?.qualities && displayVideo.qualities.length > 0);
@@ -97,7 +102,7 @@ export default function WatchPage({
     <PageLayout className="!px-0 md:!px-6">
       <div className="mx-auto max-w-5xl space-y-3 md:space-y-6">
         <div className="relative ml-[calc(50%-50vw)] w-screen max-w-none md:ml-0 md:w-full md:overflow-hidden md:rounded-xl md:shadow-2xl md:shadow-black/50">
-          <VideoPlayer video={displayVideo} />
+          <VideoPlayer video={displayVideo} onRefreshStream={refreshStream} />
         </div>
 
         <div className="space-y-4 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:space-y-5 md:px-0">

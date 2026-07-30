@@ -171,6 +171,11 @@ export const adminApi = {
     return unwrap(response);
   },
 
+  reprocessVideoStream: async (id: string): Promise<{ ok: boolean; message: string }> => {
+    const response = await apiClient.post(`/admin/videos/${id}/reprocess-stream`);
+    return unwrap(response);
+  },
+
   publish: async (id: string): Promise<void> => {
     const response = await apiClient.post(`/admin/videos/${id}/publish`);
     unwrap(response);

@@ -3,7 +3,8 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { Video } from '@/lib/api/types';
 import { useCategories, useSubcategories } from '@/hooks/use-categories';
-import { useRegenerateVideoMetadata, useUpdateVideo } from '@/hooks/use-admin';
+import { useRegenerateVideoMetadata, useReprocessVideoStream, useUpdateVideo } from '@/hooks/use-admin';
+import { isBrowserIncompatibleVideo } from '@/lib/video-cache';
 import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 import { getSubCategoryLabel } from '@/lib/category-labels';
 import { cn } from '@/lib/utils';
@@ -26,6 +27,7 @@ export function VideoEditModal({ video, onClose, onSaved }: VideoEditModalProps)
   const { data: categories } = useCategories();
   const updateVideo = useUpdateVideo();
   const regenerateMetadata = useRegenerateVideoMetadata();
+  const reprocessStream = useReprocessVideoStream();
   useLockBodyScroll(true);
 
   const [title, setTitle] = useState(video.title);
@@ -116,8 +118,21 @@ export function VideoEditModal({ video, onClose, onSaved }: VideoEditModalProps)
     }
   };
 
+  const handleReprocess = async () => {
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await reprocessStream.mutateAsync(video.id);
+      setMessage(result.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reprocess video stream');
+    }
+  };
+
   const saving = updateVideo.isPending;
   const regenerating = regenerateMetadata.isPending;
+  const reprocessing = reprocessStream.isPending;
+  const needsReprocess = isBrowserIncompatibleVideo(video);
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col touch-none sm:items-center sm:justify-center sm:p-4">
@@ -325,14 +340,26 @@ export function VideoEditModal({ video, onClose, onSaved }: VideoEditModalProps)
         </div>
 
         <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
-          <button
-            type="button"
-            onClick={() => void handleRegenerate()}
-            disabled={regenerating || saving}
-            className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
-          >
-            {regenerating ? 'Regenerating...' : 'Regenerate with AI'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleRegenerate()}
+              disabled={regenerating || saving || reprocessing}
+              className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
+            >
+              {regenerating ? 'Regenerating...' : 'Regenerate with AI'}
+            </button>
+            {(needsReprocess || video.mimeType?.includes('matroska')) && (
+              <button
+                type="button"
+                onClick={() => void handleReprocess()}
+                disabled={reprocessing || saving || regenerating}
+                className="rounded-lg border border-amber-700/60 bg-amber-950/40 px-4 py-2.5 text-sm text-amber-200 hover:bg-amber-950/70 disabled:opacity-50"
+              >
+                {reprocessing ? 'Reprocessing…' : 'Fix playback (remux MP4)'}
+              </button>
+            )}
+          </div>
 
           <div className="flex gap-2">
             <button
@@ -344,7 +371,7 @@ export function VideoEditModal({ video, onClose, onSaved }: VideoEditModalProps)
             </button>
             <button
               type="submit"
-              disabled={saving || regenerating}
+              disabled={saving || regenerating || reprocessing}
               className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save changes'}
