@@ -13,6 +13,7 @@ import {
   AlertCircle,
   ChevronsLeft,
   ChevronsRight,
+  ChevronLeft,
 } from 'lucide-react';
 import type { Video, VideoQualityOption } from '@/lib/api/types';
 import { cn, formatDuration } from '@/lib/utils';
@@ -29,7 +30,7 @@ import {
   getTouchDistance,
   getZoomViewport,
   clampPan,
-  snapVideoZoom,
+  finalizePinchZoom,
   reclampVideoZoom,
   toggleDoubleTapZoom,
   type VideoZoomTransform,
@@ -322,6 +323,7 @@ export function VideoPlayer({
 
   const [videoZoom, setVideoZoom] = useState<VideoZoomTransform>(DEFAULT_VIDEO_ZOOM);
   const [isPinching, setIsPinching] = useState(false);
+  const [isZoomSnapping, setIsZoomSnapping] = useState(false);
   const [showZoomHint, setShowZoomHint] = useState(false);
   const [fsPortraitChromeBottom, setFsPortraitChromeBottom] = useState(0);
   const [zoomContentSize, setZoomContentSize] = useState({ width: 0, height: 0 });
@@ -368,22 +370,33 @@ export function VideoPlayer({
 
   const zoomEnabled = isFullscreen || pseudoFullscreen;
 
-  const applyVideoZoom = useCallback((next: VideoZoomTransform) => {
-    videoZoomRef.current = next;
-    setVideoZoom(next);
-    if (Math.abs(next.scale - 1) > 0.02) {
-      setShowZoomHint(true);
-      if (zoomHintTimerRef.current) clearTimeout(zoomHintTimerRef.current);
-      zoomHintTimerRef.current = setTimeout(() => setShowZoomHint(false), 1200);
-    } else {
-      setShowZoomHint(false);
-    }
+  const applyVideoZoom = useCallback(
+    (next: VideoZoomTransform, options?: { animateSnap?: boolean }) => {
+      videoZoomRef.current = next;
+      setVideoZoom(next);
+      if (options?.animateSnap) {
+        setIsZoomSnapping(true);
+      }
+      if (Math.abs(next.scale - 1) > 0.02) {
+        setShowZoomHint(true);
+        if (zoomHintTimerRef.current) clearTimeout(zoomHintTimerRef.current);
+        zoomHintTimerRef.current = setTimeout(() => setShowZoomHint(false), 1200);
+      } else {
+        setShowZoomHint(false);
+      }
+    },
+    [],
+  );
+
+  const handleZoomTransitionEnd = useCallback(() => {
+    setIsZoomSnapping(false);
   }, []);
 
   const resetVideoZoom = useCallback(() => {
     videoZoomRef.current = DEFAULT_VIDEO_ZOOM;
     setVideoZoom(DEFAULT_VIDEO_ZOOM);
     setShowZoomHint(false);
+    setIsZoomSnapping(false);
     pinchGestureRef.current.active = false;
     pinchGestureRef.current.panning = false;
     pinchBlocksGesturesRef.current = false;
@@ -673,6 +686,7 @@ export function VideoPlayer({
           viewport,
           width,
           height,
+          { allowRubberBand: true },
         );
         applyVideoZoom(updated);
         pinch.lastDistance = distance;
@@ -744,14 +758,24 @@ export function VideoPlayer({
             video.height ?? 9,
           );
           const viewport = getZoomViewport(container.getBoundingClientRect());
-          applyVideoZoom(
-            snapVideoZoom(videoZoomRef.current, width, height, viewport.width, viewport.height),
+          const { transform, snapToFit } = finalizePinchZoom(
+            videoZoomRef.current,
+            width,
+            height,
+            viewport.width,
+            viewport.height,
           );
+          applyVideoZoom(transform, { animateSnap: snapToFit });
         } else {
           const viewport = getZoomViewport();
-          applyVideoZoom(
-            snapVideoZoom(videoZoomRef.current, 1, 1, viewport.width, viewport.height),
+          const { transform, snapToFit } = finalizePinchZoom(
+            videoZoomRef.current,
+            1,
+            1,
+            viewport.width,
+            viewport.height,
           );
+          applyVideoZoom(transform, { animateSnap: snapToFit });
         }
       } else if (e.touches.length === 1 && pinch.active) {
         pinch.active = false;
@@ -1302,9 +1326,17 @@ export function VideoPlayer({
           const { width, height } = zoomContentSizeRef.current.width
             ? zoomContentSizeRef.current
             : getZoomContentSize(container, videoRef.current, video.width ?? 16, video.height ?? 9);
-          applyVideoZoom(
-            toggleDoubleTapZoom(videoZoomRef.current, clientX, clientY, viewport, width, height),
+          const next = toggleDoubleTapZoom(
+            videoZoomRef.current,
+            clientX,
+            clientY,
+            viewport,
+            width,
+            height,
           );
+          const snapToFit =
+            next.scale <= 1 && Math.abs(next.x) < 0.01 && videoZoomRef.current.scale > 1.05;
+          applyVideoZoom(next, { animateSnap: snapToFit });
         }
         setShowControls(true);
         scheduleHideControls();
@@ -1852,7 +1884,8 @@ export function VideoPlayer({
     <div
       ref={containerRef}
       className={cn(
-        'group/player relative w-full overflow-hidden bg-black select-none',
+        'group/player relative w-full overflow-hidden select-none',
+        inFullscreen ? 'bg-[#212121]' : 'bg-black',
         'aspect-video',
         'rounded-none sm:rounded-xl',
         (isFullscreen || pseudoFullscreen) && 'aspect-auto h-full max-h-none rounded-none',
@@ -1860,7 +1893,7 @@ export function VideoPlayer({
         gestureActive && 'touch-none',
       )}
     >
-      <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+      <div className="absolute inset-0 flex items-center justify-center overflow-hidden bg-[#212121]">
         <div
           ref={videoTransformRef}
           className={cn(
@@ -1873,7 +1906,14 @@ export function VideoPlayer({
               : undefined),
             transform: `scale(${videoZoom.scale}) translate3d(${videoZoom.x / videoZoom.scale}px, ${videoZoom.y / videoZoom.scale}px, 0)`,
             transformOrigin: 'center center',
-            transition: isPinching ? 'none' : 'transform 0.18s ease-out',
+            transition: isPinching
+              ? 'none'
+              : isZoomSnapping
+                ? 'transform 0.38s cubic-bezier(0.22, 1, 0.36, 1)'
+                : 'transform 0.22s cubic-bezier(0.2, 0, 0, 1)',
+          }}
+          onTransitionEnd={(e) => {
+            if (e.propertyName === 'transform') handleZoomTransitionEnd();
           }}
         >
           <video
@@ -2003,14 +2043,34 @@ export function VideoPlayer({
         </div>
       )}
 
+      {/* Fullscreen back — always reachable on mobile */}
+      {inFullscreen && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void exitFullscreenMode();
+          }}
+          className={cn(
+            'pointer-events-auto absolute left-3 z-30 flex h-10 w-10 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition-opacity duration-200 active:bg-black/60',
+            'top-[max(0.75rem,env(safe-area-inset-top))]',
+            controlsVisible ? 'opacity-100' : 'opacity-80',
+          )}
+          aria-label="Exit fullscreen"
+        >
+          <ChevronLeft className="h-6 w-6 stroke-[2.5]" />
+        </button>
+      )}
+
       {/* Top gradient + badges when controls visible */}
       <div
         className={cn(
-          'pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent px-3 pb-6 pt-3 transition-opacity duration-200 sm:px-4',
+          'pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent px-3 pb-6 transition-opacity duration-200 sm:px-4',
+          inFullscreen ? 'pt-[max(3rem,calc(env(safe-area-inset-top)+2.5rem))]' : 'pt-3',
           controlsVisible ? 'opacity-100' : 'opacity-0',
         )}
       >
-        <div className="flex items-center justify-end gap-2">
+        <div className={cn('flex items-center gap-2', inFullscreen ? 'justify-end pl-12' : 'justify-end')}>
           {qualityOptions.length > 1 && (
             <span className="rounded bg-black/40 px-2 py-0.5 text-[10px] font-medium text-white/90">
               {activeQualityLabel}

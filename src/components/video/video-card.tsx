@@ -74,8 +74,8 @@ export function VideoCard({
             </span>
           )}
 
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-600/90 text-white shadow-lg">
+          <div className="absolute inset-0 flex items-center justify-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-600/95 text-white shadow-lg sm:h-11 sm:w-11">
               <Play className="ml-0.5 h-4 w-4 fill-current" />
             </div>
           </div>

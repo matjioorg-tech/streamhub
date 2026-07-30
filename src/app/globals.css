@@ -61,6 +61,15 @@ input[type='range']::-webkit-slider-runnable-track {
   background: rgba(255, 255, 255, 0.25);
 }
 
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Fullscreen video player */
 .group\/player:fullscreen,
 .group\/player:-webkit-full-screen {
@@ -69,7 +78,7 @@ input[type='range']::-webkit-slider-runnable-track {
   max-height: none !important;
   min-height: 0 !important;
   aspect-ratio: auto;
-  background: #000;
+  background: #212121 !important;
   overflow: hidden !important;
   overscroll-behavior: none;
 }
@@ -99,6 +108,7 @@ input[type='range']::-webkit-slider-runnable-track {
   margin: 0 !important;
   overflow: hidden !important;
   overscroll-behavior: none;
+  background: #212121 !important;
 }
 
 body.video-pseudo-fullscreen {

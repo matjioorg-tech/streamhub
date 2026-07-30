@@ -1,19 +1,26 @@
 'use client';
 
 import { PageLayout } from '@/components/layout/page-layout';
-import { VideoGrid } from '@/components/video/video-grid';
+import { PageHeader } from '@/components/layout/page-header';
+import { VideoGrid, VideoGridSkeleton } from '@/components/video/video-grid';
 import { useTrendingVideos } from '@/hooks/use-videos';
+import { Flame } from 'lucide-react';
 
 export default function TrendingPage() {
   const { data, isLoading } = useTrendingVideos(24);
 
   return (
     <PageLayout>
-      <h1 className="mb-6 text-2xl font-bold">Trending</h1>
+      <PageHeader
+        icon={Flame}
+        title="Trending"
+        subtitle="The most watched videos right now"
+        accent="orange"
+      />
       {isLoading ? (
-        <div className="text-zinc-400">Loading...</div>
+        <VideoGridSkeleton title="Trending" icon={Flame} />
       ) : (
-        <VideoGrid videos={data ?? []} />
+        <VideoGrid videos={data ?? []} icon={Flame} adminEditable />
       )}
     </PageLayout>
   );

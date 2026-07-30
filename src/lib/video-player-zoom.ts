@@ -1,6 +1,9 @@
 export const VIDEO_ZOOM_MIN = 1;
 export const VIDEO_ZOOM_MAX = 4;
-export const VIDEO_ZOOM_SNAP = 1.04;
+/** During active pinch-out, allow slight under-zoom (YouTube rubber-band). */
+export const VIDEO_ZOOM_RUBBER_MIN = 0.86;
+/** Release below this scale snaps back to fit (1x). */
+export const VIDEO_ZOOM_SNAP = 1.08;
 
 export interface VideoZoomTransform {
   scale: number;
@@ -153,14 +156,26 @@ export function applyIncrementalFocalZoom(
   viewport: ZoomViewport,
   contentWidth: number,
   contentHeight: number,
+  options?: { allowRubberBand?: boolean },
 ): VideoZoomTransform {
-  const scale = Math.max(VIDEO_ZOOM_MIN, Math.min(VIDEO_ZOOM_MAX, nextScale));
-  if (scale <= 1) return DEFAULT_VIDEO_ZOOM;
+  const allowRubberBand = options?.allowRubberBand ?? false;
+  const minScale = allowRubberBand ? VIDEO_ZOOM_RUBBER_MIN : VIDEO_ZOOM_MIN;
+  const scale = Math.max(minScale, Math.min(VIDEO_ZOOM_MAX, nextScale));
 
   const { x: focalX, y: focalY } = clientToZoomLocal(focalClientX, focalClientY, viewport);
   const ratio = prev.scale > 0 ? scale / prev.scale : 1;
-  const x = focalX - (focalX - prev.x) * ratio;
-  const y = focalY - (focalY - prev.y) * ratio;
+  let x = focalX - (focalX - prev.x) * ratio;
+  let y = focalY - (focalY - prev.y) * ratio;
+
+  if (scale <= 1) {
+    if (!allowRubberBand) return DEFAULT_VIDEO_ZOOM;
+    // Under-fit: shrink toward center and fade pan (letterbox / grey bars appear).
+    const fitWeight = Math.max(0, (scale - VIDEO_ZOOM_RUBBER_MIN) / (1 - VIDEO_ZOOM_RUBBER_MIN));
+    x *= fitWeight;
+    y *= fitWeight;
+    return { scale, x, y };
+  }
+
   const clamped = clampPan(scale, x, y, contentWidth, contentHeight, viewport.width, viewport.height);
   return { scale, ...clamped };
 }
@@ -196,7 +211,6 @@ export function snapVideoZoom(
   viewportHeight: number,
 ): VideoZoomTransform {
   if (transform.scale <= VIDEO_ZOOM_SNAP) return DEFAULT_VIDEO_ZOOM;
-  if (Math.abs(transform.scale - 1) < 0.06) return DEFAULT_VIDEO_ZOOM;
   const clamped = clampPan(
     transform.scale,
     transform.x,
@@ -207,6 +221,23 @@ export function snapVideoZoom(
     viewportHeight,
   );
   return { scale: transform.scale, ...clamped };
+}
+
+/** Called on pinch release — snap to fit or clamp pan like YouTube. */
+export function finalizePinchZoom(
+  transform: VideoZoomTransform,
+  contentWidth: number,
+  contentHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): { transform: VideoZoomTransform; snapToFit: boolean } {
+  if (transform.scale <= VIDEO_ZOOM_SNAP) {
+    return { transform: DEFAULT_VIDEO_ZOOM, snapToFit: true };
+  }
+  return {
+    transform: snapVideoZoom(transform, contentWidth, contentHeight, viewportWidth, viewportHeight),
+    snapToFit: false,
+  };
 }
 
 export function formatZoomPercent(scale: number): string {

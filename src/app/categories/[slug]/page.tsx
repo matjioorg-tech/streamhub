@@ -1,139 +1,242 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PageLayout } from '@/components/layout/page-layout';
-import { VideoGrid } from '@/components/video/video-grid';
+import { CreatorBrowsePanel } from '@/components/browse/creator-browse-panel';
+import { VideoBrowseToolbar } from '@/components/browse/video-browse-toolbar';
+import { VideoGrid, VideoGridSkeleton } from '@/components/video/video-grid';
+import { Pagination } from '@/components/ui/pagination';
 import { useCategory, useSubcategories } from '@/hooks/use-categories';
 import { useVideos } from '@/hooks/use-videos';
 import { getSubCategoryLabel } from '@/lib/category-labels';
-import { cn } from '@/lib/utils';
+import { parseVideoSort } from '@/lib/video-sort';
 
-export default function CategoryDetailPage() {
+const PAGE_SIZE = 20;
+
+function CategoryDetailContent() {
   const params = useParams<{ slug: string }>();
+  const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const videosRef = useRef<HTMLDivElement>(null);
+
   const selectedSub = searchParams.get('sub') ?? undefined;
+  const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1);
+  const sort = parseVideoSort(searchParams.get('sort'));
+  const videoSearchParam = searchParams.get('q') ?? '';
 
   const [creatorSearch, setCreatorSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [debouncedCreatorSearch, setDebouncedCreatorSearch] = useState('');
+  const [videoSearch, setVideoSearch] = useState(videoSearchParam);
+  const [debouncedVideoSearch, setDebouncedVideoSearch] = useState(videoSearchParam);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedSearch(creatorSearch.trim()), 250);
+    setVideoSearch(videoSearchParam);
+    setDebouncedVideoSearch(videoSearchParam);
+  }, [videoSearchParam]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedCreatorSearch(creatorSearch.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [creatorSearch]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedVideoSearch(videoSearch.trim()), 350);
+    return () => window.clearTimeout(timer);
+  }, [videoSearch]);
+
+  const updateParams = useCallback(
+    (updates: Record<string, string | undefined>, options?: { scrollToVideos?: boolean }) => {
+      const next = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        if (value) next.set(key, value);
+        else next.delete(key);
+      }
+      const query = next.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      if (options?.scrollToVideos) {
+        window.requestAnimationFrame(() => {
+          videosRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+    },
+    [pathname, router, searchParams],
+  );
+
+  const buildCreatorHref = useCallback(
+    (creatorName?: string) => {
+      const next = new URLSearchParams();
+      if (creatorName) next.set('sub', creatorName);
+      if (sort.value !== 'newest') next.set('sort', sort.value);
+      if (debouncedVideoSearch.trim()) next.set('q', debouncedVideoSearch.trim());
+      const query = next.toString();
+      return query ? `${pathname}?${query}` : pathname;
+    },
+    [debouncedVideoSearch, pathname, sort.value],
+  );
+
+  useEffect(() => {
+    const normalized = debouncedVideoSearch.trim();
+    if (normalized === videoSearchParam) return;
+    updateParams(
+      {
+        q: normalized || undefined,
+        page: undefined,
+        sub: selectedSub,
+        sort: sort.value !== 'newest' ? sort.value : undefined,
+      },
+      { scrollToVideos: false },
+    );
+  }, [debouncedVideoSearch, selectedSub, sort.value, updateParams, videoSearchParam]);
 
   const { data: category, isLoading: categoryLoading } = useCategory(params.slug);
   const { data: subcategories, isLoading: subcategoriesLoading } = useSubcategories(
     params.slug,
-    debouncedSearch,
+    debouncedCreatorSearch,
   );
-  const { data: videos, isLoading: videosLoading } = useVideos(
-    {
+
+  const videoQuery = useMemo(
+    () => ({
       category: category?.id,
       subCategory: selectedSub,
-      limit: 24,
-    },
+      search: debouncedVideoSearch || undefined,
+      page,
+      limit: PAGE_SIZE,
+      sortBy: sort.sortBy,
+      sortOrder: sort.sortOrder,
+    }),
+    [category?.id, debouncedVideoSearch, page, selectedSub, sort.sortBy, sort.sortOrder],
+  );
+
+  const { data: videos, isLoading: videosLoading, isFetching: videosFetching } = useVideos(
+    videoQuery,
     { enabled: !!category?.id },
   );
 
-  const creatorLabel = useMemo(
-    () => getSubCategoryLabel(category?.name),
-    [category?.name],
-  );
+  const creatorLabel = useMemo(() => getSubCategoryLabel(category?.name), [category?.name]);
+  const hasCreators = (subcategories?.length ?? 0) > 0 || subcategoriesLoading;
+  const meta = videos?.meta;
+  const videoList = videos?.data ?? [];
 
-  const isLoading = categoryLoading || videosLoading;
-  const hasCreators = (subcategories?.length ?? 0) > 0;
+  const handleCreatorSelect = (creatorName: string | undefined) => {
+    updateParams(
+      {
+        sub: creatorName,
+        page: undefined,
+        q: debouncedVideoSearch || undefined,
+        sort: sort.value !== 'newest' ? sort.value : undefined,
+      },
+      { scrollToVideos: !!creatorName },
+    );
+  };
+
+  const handleSortChange = (value: string) => {
+    updateParams({
+      sort: value === 'newest' ? undefined : value,
+      page: undefined,
+      sub: selectedSub,
+      q: debouncedVideoSearch || undefined,
+    });
+  };
+
+  const handlePageChange = (nextPage: number) => {
+    updateParams(
+      {
+        page: nextPage <= 1 ? undefined : String(nextPage),
+        sub: selectedSub,
+        q: debouncedVideoSearch || undefined,
+        sort: sort.value !== 'newest' ? sort.value : undefined,
+      },
+      { scrollToVideos: true },
+    );
+  };
+
+  const videosTitle = selectedSub
+    ? `${selectedSub} — ${category?.name ?? ''}`
+    : `All ${category?.name ?? ''} videos`;
 
   return (
     <PageLayout>
-      <div className="mb-5">
-        <Link href="/categories" className="text-sm text-zinc-400 hover:text-white">
-          ← All categories
+      <div className="mb-5 sm:mb-6">
+        <Link href="/categories" className="text-xs text-zinc-500 transition hover:text-zinc-300">
+          ← Browse
         </Link>
-        <h1 className="mt-2 text-2xl font-bold text-white">
+        <h1 className="mt-2 text-xl font-bold tracking-tight text-white sm:text-2xl">
           {categoryLoading ? 'Loading...' : category?.name ?? 'Category'}
         </h1>
+        {category?.description && (
+          <p className="mt-1 max-w-2xl text-sm text-zinc-500">{category.description}</p>
+        )}
         {selectedSub ? (
-          <p className="mt-1 text-sm text-zinc-400">
-            {creatorLabel}: <span className="text-white">{selectedSub}</span>
+          <p className="mt-2 inline-flex items-center gap-2 rounded-full bg-red-500/10 px-3 py-1 text-xs text-red-300 ring-1 ring-red-500/20 sm:text-sm">
+            <span className="text-zinc-400">{creatorLabel}:</span>
+            <span className="font-medium text-white">{selectedSub}</span>
+            <Link
+              href={buildCreatorHref()}
+              className="ml-1 text-red-400 hover:text-red-300"
+            >
+              Clear
+            </Link>
           </p>
         ) : (
-          <p className="mt-1 text-sm text-zinc-500">Select a {creatorLabel.toLowerCase()} to filter videos</p>
+          <p className="mt-1.5 text-xs text-zinc-500 sm:text-sm">
+            Pick a {creatorLabel.toLowerCase()} or browse all videos
+          </p>
         )}
       </div>
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         {hasCreators && (
-          <aside className="w-full shrink-0 lg:w-64 xl:w-72">
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/80 lg:sticky lg:top-20">
-              <div className="border-b border-zinc-800 px-4 py-3">
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                  {creatorLabel}s
-                </p>
-                <input
-                  type="search"
-                  value={creatorSearch}
-                  onChange={(e) => setCreatorSearch(e.target.value)}
-                  placeholder={`Search ${creatorLabel.toLowerCase()}s...`}
-                  className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-zinc-500 focus:border-red-500/60 focus:outline-none"
-                />
-              </div>
-
-              <nav className="max-h-[min(50vh,420px)] overflow-y-auto p-2">
-                <Link
-                  href={`/categories/${params.slug}`}
-                  className={cn(
-                    'flex items-center justify-between rounded-lg px-3 py-2.5 text-sm transition',
-                    !selectedSub
-                      ? 'bg-red-500/15 font-medium text-red-300'
-                      : 'text-zinc-300 hover:bg-zinc-900',
-                  )}
-                >
-                  <span>All videos</span>
-                </Link>
-
-                {subcategoriesLoading ? (
-                  <p className="px-3 py-4 text-sm text-zinc-500">Loading...</p>
-                ) : subcategories?.length === 0 ? (
-                  <p className="px-3 py-4 text-sm text-zinc-500">No matches</p>
-                ) : (
-                  subcategories?.map((sub) => (
-                    <Link
-                      key={sub.slug}
-                      href={`/categories/${params.slug}?sub=${encodeURIComponent(sub.name)}`}
-                      className={cn(
-                        'flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-sm transition',
-                        selectedSub?.toLowerCase() === sub.name.toLowerCase()
-                          ? 'bg-red-500/15 font-medium text-red-300'
-                          : 'text-zinc-300 hover:bg-zinc-900',
-                      )}
-                    >
-                      <span className="truncate">{sub.name}</span>
-                      <span className="shrink-0 text-xs text-zinc-500">{sub.videoCount}</span>
-                    </Link>
-                  ))
-                )}
-              </nav>
-            </div>
-          </aside>
+          <CreatorBrowsePanel
+            creatorLabel={creatorLabel}
+            subcategories={subcategories ?? []}
+            selectedSub={selectedSub}
+            isLoading={subcategoriesLoading}
+            search={creatorSearch}
+            onSearchChange={setCreatorSearch}
+            onSelect={handleCreatorSelect}
+            buildHref={buildCreatorHref}
+          />
         )}
 
-        <div className="min-w-0 flex-1">
-          {isLoading ? (
-            <div className="text-zinc-400">Loading videos...</div>
+        <div ref={videosRef} className="min-w-0 flex-1 scroll-mt-24">
+          <VideoBrowseToolbar
+            sort={sort}
+            onSortChange={handleSortChange}
+            videoSearch={videoSearch}
+            onVideoSearchChange={setVideoSearch}
+            total={meta?.total}
+            isLoading={videosLoading || videosFetching}
+          />
+
+          {videosLoading ? (
+            <VideoGridSkeleton title={videosTitle} />
           ) : (
-            <VideoGrid
-              videos={videos?.data ?? []}
-              title={
-                selectedSub
-                  ? `${selectedSub} — ${category?.name ?? ''}`
-                  : `All ${category?.name ?? ''} videos`
-              }
-            />
+            <>
+              <VideoGrid videos={videoList} title={videosTitle} />
+              {meta && meta.totalPages > 1 && (
+                <Pagination meta={meta} onPageChange={handlePageChange} className="mt-8" />
+              )}
+            </>
           )}
         </div>
       </div>
     </PageLayout>
+  );
+}
+
+export default function CategoryDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <PageLayout>
+          <div className="text-zinc-400">Loading category...</div>
+        </PageLayout>
+      }
+    >
+      <CategoryDetailContent />
+    </Suspense>
   );
 }

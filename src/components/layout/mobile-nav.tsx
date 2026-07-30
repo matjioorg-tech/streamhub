@@ -17,8 +17,8 @@ export function MobileNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
-      <div className="mx-auto flex max-w-lg items-stretch justify-around">
+    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-zinc-800/90 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden">
+      <div className="mx-auto flex max-w-lg items-stretch justify-around px-1">
         {links.map(({ href, label, icon: Icon }) => {
           const active =
             pathname === href || (href !== '/' && pathname.startsWith(href));
@@ -27,10 +27,13 @@ export function MobileNav() {
               key={href}
               href={href}
               className={cn(
-                'flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[11px] font-medium transition-colors',
+                'relative flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px] font-medium transition-colors',
                 active ? 'text-red-400' : 'text-zinc-500',
               )}
             >
+              {active && (
+                <span className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-red-500" />
+              )}
               <Icon className={cn('h-5 w-5 shrink-0', active && 'text-red-500')} />
               <span className="truncate">{label}</span>
             </Link>
