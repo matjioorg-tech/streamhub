@@ -174,15 +174,12 @@ function isPortrait(): boolean {
   return window.matchMedia('(orientation: portrait)').matches;
 }
 
-function waitUntilCanPlay(el: HTMLVideoElement, timeoutMs = 8000): Promise<void> {
+function waitUntilCanPlay(el: HTMLVideoElement, timeoutMs = 12000): Promise<void> {
   if (el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
     return Promise.resolve();
   }
 
   el.preload = 'auto';
-  if (el.networkState === HTMLMediaElement.NETWORK_EMPTY) {
-    el.load();
-  }
 
   return new Promise((resolve, reject) => {
     const timer = window.setTimeout(() => {
@@ -199,10 +196,12 @@ function waitUntilCanPlay(el: HTMLVideoElement, timeoutMs = 8000): Promise<void>
       window.clearTimeout(timer);
       el.removeEventListener('canplay', onReady);
       el.removeEventListener('loadeddata', onReady);
+      el.removeEventListener('canplaythrough', onReady);
     };
 
     el.addEventListener('canplay', onReady, { once: true });
     el.addEventListener('loadeddata', onReady, { once: true });
+    el.addEventListener('canplaythrough', onReady, { once: true });
   });
 }
 
@@ -287,6 +286,8 @@ export function VideoPlayer({
   const [isStarting, setIsStarting] = useState(false);
   const pendingPlayRef = useRef(false);
   const autoplayPendingRef = useRef(false);
+  const activeSourceUrlRef = useRef<string | null>(null);
+  const playbackRetryKeyRef = useRef<string | null>(null);
   const isScrubbingRef = useRef(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const scrubSessionRef = useRef({
@@ -1055,44 +1056,33 @@ export function VideoPlayer({
   useLayoutEffect(() => {
     if (!activeSourceUrl) return;
 
+    activeSourceUrlRef.current = activeSourceUrl;
     primeVideoStream(activeSourceUrl);
 
     const el = videoRef.current;
     if (!el) return;
 
-    const streamKey = getStreamKey(activeSourceUrl);
-    const currentKey = el.src ? getStreamKey(el.src) : null;
-    const srcChanged = currentKey !== streamKey;
     const shouldAutoplay = autoplayPendingRef.current;
-
-    el.preload = 'auto';
+    // Full URL compare — signed CDN URLs rotate query params; path-only match kept stale/expired URLs.
+    const srcChanged = el.src !== activeSourceUrl;
 
     if (srcChanged) {
       el.src = activeSourceUrl;
-    } else if (!shouldAutoplay) {
-      return;
+      playbackRetryKeyRef.current = null;
     }
 
     if (!shouldAutoplay) {
-      if (srcChanged) {
-        const wasPlaying = !el.paused;
-        el.load();
-        if (wasPlaying) {
-          void el.play().catch(() => undefined);
-        }
+      if (srcChanged && !el.paused) {
+        void el.play().catch(() => undefined);
       }
       return;
     }
 
     autoplayPendingRef.current = false;
 
-    if (srcChanged) {
-      el.load();
-    }
-
     setPlaybackError(null);
     setIsStarting(true);
-    setIsBuffering(true);
+    setIsBuffering(el.readyState < HTMLMediaElement.HAVE_FUTURE_DATA);
     pendingPlayRef.current = true;
 
     void el
@@ -1977,6 +1967,21 @@ export function VideoPlayer({
               }
             }}
             onError={() => {
+              const el = videoRef.current;
+              const url = activeSourceUrlRef.current;
+              const retryKey = url ? getStreamKey(url) : null;
+
+              if (el && url && playbackRetryKeyRef.current !== retryKey) {
+                playbackRetryKeyRef.current = retryKey;
+                setPlaybackError(null);
+                setIsStarting(true);
+                setIsBuffering(true);
+                pendingPlayRef.current = true;
+                el.src = url;
+                void el.play().catch(() => void attemptPlay());
+                return;
+              }
+
               setIsBuffering(false);
               setIsStarting(false);
               pendingPlayRef.current = false;

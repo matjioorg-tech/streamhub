@@ -16,20 +16,36 @@ export function getStreamKey(url: string): string {
   }
 }
 
-let warmVideoEl: HTMLVideoElement | null = null;
+/** Hint the browser to prefetch stream metadata (avoid a second full download). */
+export function primeVideoStream(url: string): void {
+  if (!url || typeof document === 'undefined') return;
 
-function getWarmVideoElement(): HTMLVideoElement | null {
-  if (typeof document === 'undefined') return null;
-  if (!warmVideoEl) {
-    warmVideoEl = document.createElement('video');
-    warmVideoEl.preload = 'auto';
-    warmVideoEl.muted = true;
-    warmVideoEl.playsInline = true;
-    warmVideoEl.setAttribute('playsinline', 'true');
-    warmVideoEl.style.cssText = 'position:fixed;width:0;height:0;opacity:0;pointer-events:none';
-    document.body.appendChild(warmVideoEl);
+  const streamKey = getStreamKey(url);
+
+  const existing = document.querySelector(`link[data-video-prime="${streamKey}"]`);
+  if (existing) return;
+
+  try {
+    const origin = new URL(url).origin;
+    if (!document.querySelector(`link[data-video-preconnect="${origin}"]`)) {
+      const preconnect = document.createElement('link');
+      preconnect.rel = 'preconnect';
+      preconnect.href = origin;
+      preconnect.crossOrigin = 'anonymous';
+      preconnect.setAttribute('data-video-preconnect', origin);
+      document.head.appendChild(preconnect);
+    }
+  } catch {
+    // ignore invalid URL
   }
-  return warmVideoEl;
+
+  const link = document.createElement('link');
+  link.rel = 'preload';
+  link.as = 'fetch';
+  link.href = url;
+  link.crossOrigin = 'anonymous';
+  link.setAttribute('data-video-prime', streamKey);
+  document.head.appendChild(link);
 }
 
 /** Reuse list/search cache so the watch page can render the player before the watch API returns. */
@@ -74,28 +90,4 @@ export function prefetchVideoBySlug(queryClient: QueryClient, slug: string): voi
     queryFn: () => videosApi.getBySlug(slug),
     staleTime: 5 * 60 * 1000,
   });
-}
-
-/** Hint the browser to open a connection and fetch the start of the MP4. */
-export function primeVideoStream(url: string): void {
-  if (!url || typeof document === 'undefined') return;
-
-  const streamKey = getStreamKey(url);
-
-  const existing = document.querySelector(`link[data-video-prime="${streamKey}"]`);
-  if (!existing) {
-    const link = document.createElement('link');
-    link.rel = 'preload';
-    link.as = 'video';
-    link.href = url;
-    link.setAttribute('data-video-prime', streamKey);
-    document.head.appendChild(link);
-  }
-
-  const warm = getWarmVideoElement();
-  if (warm && warm.getAttribute('data-stream-key') !== streamKey) {
-    warm.src = url;
-    warm.setAttribute('data-stream-key', streamKey);
-    warm.load();
-  }
 }

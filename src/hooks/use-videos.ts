@@ -33,6 +33,7 @@ export function useVideo(slug: string) {
     queryFn: () => videosApi.getBySlug(slug),
     enabled: !!slug,
     staleTime: 5 * 60 * 1000,
+    refetchOnMount: 'always',
     placeholderData: () => findVideoInCache(queryClient, slug),
   });
 }

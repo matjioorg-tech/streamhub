@@ -10,7 +10,7 @@ export function pickAutoQualityOption(options: VideoQualityOption[]): VideoQuali
   if (options.length === 0) return null;
   if (options.length === 1) return options[0];
 
-  const cap = isMobileDevice() ? 720 : 1080;
+  const cap = isMobileDevice() ? 480 : 1080;
   const sortedDesc = [...options].sort((a, b) => b.height - a.height);
   const withinCap = sortedDesc.find((q) => q.height > 0 && q.height <= cap);
   if (withinCap) return withinCap;
