@@ -3,9 +3,19 @@ import { videosApi } from '@/lib/api';
 import type { PaginatedResponse, Video } from '@/lib/api/types';
 
 const CDN_ORIGIN = 'https://media.telnewstreams.dpdns.org';
+const RANGE_WARM_BYTES = 512 * 1024; // first 512 KB — enough for moov + first frames on faststart MP4
 
 function hasPlaybackUrl(video: Video): boolean {
   return Boolean(video.cdnUrl || (video.qualities && video.qualities.length > 0));
+}
+
+export function getVideoStreamUrl(video: Video): string | null {
+  return (
+    video.cdnUrl ??
+    video.qualities?.find((q) => q.url)?.url ??
+    video.qualities?.[0]?.url ??
+    null
+  );
 }
 
 /** Stable identity for signed stream URLs (ignore changing query params). */
@@ -36,14 +46,76 @@ function hintCdnConnection(url: string): void {
   }
 }
 
-/** Warm CDN connection only — avoid fetch preload competing with the video element. */
-export function primeVideoStream(url: string): void {
-  if (!url || typeof document === 'undefined') return;
-  hintCdnConnection(url);
-  hintCdnConnection(CDN_ORIGIN);
+const rangeWarmed = new Set<string>();
+const warmElements = new Map<string, { el: HTMLVideoElement; timer: ReturnType<typeof setTimeout> }>();
+
+function prefetchRange(url: string, streamKey: string): void {
+  if (rangeWarmed.has(streamKey)) return;
+  rangeWarmed.add(streamKey);
+
+  void fetch(url, {
+    method: 'GET',
+    headers: { Range: `bytes=0-${RANGE_WARM_BYTES - 1}` },
+    mode: 'cors',
+    credentials: 'omit',
+    priority: 'high',
+  }).catch(() => {
+    rangeWarmed.delete(streamKey);
+  });
 }
 
-/** MKV/MKV mislabeled uploads — browsers cannot decode in `<video>`. */
+/** Hidden `<video>` starts the media pipeline before navigation finishes. */
+function primeMediaElement(url: string, streamKey: string): void {
+  if (warmElements.has(streamKey)) return;
+
+  const el = document.createElement('video');
+  el.preload = 'auto';
+  el.muted = true;
+  el.playsInline = true;
+  el.setAttribute('playsinline', '');
+  el.setAttribute('webkit-playsinline', '');
+  el.style.cssText =
+    'position:fixed;width:0;height:0;opacity:0;pointer-events:none;left:-9999px;top:-9999px';
+  el.src = url;
+  document.body.appendChild(el);
+  el.load();
+
+  const timer = setTimeout(() => {
+    el.remove();
+    warmElements.delete(streamKey);
+  }, 60_000);
+
+  warmElements.set(streamKey, { el, timer });
+}
+
+/** Stop hidden warm element once the watch player takes over the same stream. */
+export function releaseWarmVideo(url: string): void {
+  const streamKey = getStreamKey(url);
+  const session = warmElements.get(streamKey);
+  if (!session) return;
+  clearTimeout(session.timer);
+  session.el.remove();
+  warmElements.delete(streamKey);
+}
+
+/** Preconnect + range prefetch + hidden video warm — call on card tap/hover. */
+export function warmVideoStream(url: string): void {
+  if (!url || typeof document === 'undefined') return;
+
+  hintCdnConnection(url);
+  hintCdnConnection(CDN_ORIGIN);
+
+  const streamKey = getStreamKey(url);
+  prefetchRange(url, streamKey);
+  primeMediaElement(url, streamKey);
+}
+
+/** @deprecated Use warmVideoStream */
+export function primeVideoStream(url: string): void {
+  warmVideoStream(url);
+}
+
+/** MKV mislabeled uploads — browsers cannot decode in `<video>`. */
 export function isBrowserIncompatibleVideo(video: Pick<Video, 'mimeType'>): boolean {
   const mime = video.mimeType?.toLowerCase() ?? '';
   return (
@@ -86,11 +158,17 @@ export function findVideoInCache(queryClient: QueryClient, slug: string): Video 
 }
 
 export function prefetchVideoBySlug(queryClient: QueryClient, slug: string): void {
-  primeVideoStream(CDN_ORIGIN);
+  const cached = findVideoInCache(queryClient, slug);
+  const streamUrl = cached ? getVideoStreamUrl(cached) : null;
+  if (streamUrl) {
+    warmVideoStream(streamUrl);
+  } else {
+    hintCdnConnection(CDN_ORIGIN);
+  }
 
   void queryClient.prefetchQuery({
     queryKey: ['video', slug],
     queryFn: () => videosApi.getBySlug(slug),
-    staleTime: 0,
+    staleTime: 60_000,
   });
 }

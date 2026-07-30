@@ -9,7 +9,7 @@ import { VideoMetadataPanel } from '@/components/video/video-metadata-panel';
 import { VideoSuggestions } from '@/components/video/video-suggestions';
 import { AdminVideoEditButton } from '@/components/admin/admin-video-edit-button';
 import { useVideo, useNearbyVideos } from '@/hooks/use-videos';
-import { primeVideoStream, findVideoInCache } from '@/lib/video-cache';
+import { warmVideoStream, findVideoInCache, getVideoStreamUrl } from '@/lib/video-cache';
 import { formatViews, formatDuration, formatUploadLabel, cn } from '@/lib/utils';
 import { Eye, Calendar, Film, Clock } from 'lucide-react';
 import type { Video } from '@/lib/api/types';
@@ -28,22 +28,16 @@ export default function WatchPage({
 
   useLayoutEffect(() => {
     const cached = findVideoInCache(queryClient, slug);
-    const streamUrl =
-      cached?.cdnUrl ??
-      cached?.qualities?.find((q) => q.url)?.url ??
-      cached?.qualities?.[0]?.url;
+    const streamUrl = cached ? getVideoStreamUrl(cached) : null;
     if (streamUrl) {
-      primeVideoStream(streamUrl);
+      warmVideoStream(streamUrl);
     }
   }, [queryClient, slug]);
 
   useLayoutEffect(() => {
-    const streamUrl =
-      displayVideo?.cdnUrl ??
-      displayVideo?.qualities?.find((q) => q.url)?.url ??
-      displayVideo?.qualities?.[0]?.url;
+    const streamUrl = displayVideo ? getVideoStreamUrl(displayVideo) : null;
     if (streamUrl) {
-      primeVideoStream(streamUrl);
+      warmVideoStream(streamUrl);
     }
   }, [displayVideo?.cdnUrl, displayVideo?.qualities]);
 
@@ -102,7 +96,7 @@ export default function WatchPage({
     <PageLayout className="!px-0 md:!px-6">
       <div className="mx-auto max-w-5xl space-y-3 md:space-y-6">
         <div className="relative ml-[calc(50%-50vw)] w-screen max-w-none md:ml-0 md:w-full md:overflow-hidden md:rounded-xl md:shadow-2xl md:shadow-black/50">
-          <VideoPlayer video={displayVideo} onRefreshStream={refreshStream} />
+          <VideoPlayer video={displayVideo} autoPlay onRefreshStream={refreshStream} />
         </div>
 
         <div className="space-y-4 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:space-y-5 md:px-0">

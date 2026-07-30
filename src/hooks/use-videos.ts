@@ -33,7 +33,8 @@ export function useVideo(slug: string) {
     queryFn: () => videosApi.getBySlug(slug),
     enabled: !!slug,
     staleTime: 5 * 60 * 1000,
-    refetchOnMount: 'always',
+    // Refresh signed URLs in background — player keeps the same stream key while buffering.
+    refetchOnMount: true,
     placeholderData: () => findVideoInCache(queryClient, slug),
   });
 }

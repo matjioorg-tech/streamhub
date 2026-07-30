@@ -18,7 +18,7 @@ import {
 import type { Video, VideoQualityOption } from '@/lib/api/types';
 import { cn, formatDuration } from '@/lib/utils';
 import { pickAutoQualityOption } from '@/lib/video-quality';
-import { primeVideoStream, getStreamKey, isBrowserIncompatibleVideo } from '@/lib/video-cache';
+import { getStreamKey, isBrowserIncompatibleVideo, releaseWarmVideo, warmVideoStream } from '@/lib/video-cache';
 import { takeVideoAutoplayIntent } from '@/lib/video-autoplay';
 import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
 import {
@@ -275,7 +275,7 @@ export function VideoPlayer({
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(video.duration ?? 0);
   const [bufferedEnd, setBufferedEnd] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -290,6 +290,7 @@ export function VideoPlayer({
   const pendingPlayRef = useRef(false);
   const autoplayPendingRef = useRef(false);
   const activeSourceUrlRef = useRef<string | null>(null);
+  const mountedStreamKeyRef = useRef<string | null>(null);
   const playbackRetryKeyRef = useRef<string | null>(null);
   const streamRefreshAttemptedRef = useRef(false);
   const isScrubbingRef = useRef(false);
@@ -1059,30 +1060,45 @@ export function VideoPlayer({
 
   useLayoutEffect(() => {
     streamRefreshAttemptedRef.current = false;
-  }, [video.slug, video.cdnUrl, video.qualities]);
+    mountedStreamKeyRef.current = null;
+  }, [video.slug]);
 
   useLayoutEffect(() => {
     if (!activeSourceUrl) return;
 
     activeSourceUrlRef.current = activeSourceUrl;
-    primeVideoStream(activeSourceUrl);
+    warmVideoStream(activeSourceUrl);
 
     const el = videoRef.current;
     if (!el) return;
 
     const shouldAutoplay = autoplayPendingRef.current;
-    // Full URL compare — signed CDN URLs rotate query params; path-only match kept stale/expired URLs.
-    const srcChanged = el.src !== activeSourceUrl;
+    const nextStreamKey = getStreamKey(activeSourceUrl);
+    const sameStream =
+      mountedStreamKeyRef.current !== null && mountedStreamKeyRef.current === nextStreamKey;
 
-    if (srcChanged) {
-      el.src = activeSourceUrl;
-      playbackRetryKeyRef.current = null;
+    // API refetch rotates signed URL query params — never restart playback for the same object.
+    if (sameStream) {
+      releaseWarmVideo(activeSourceUrl);
+      if (shouldAutoplay && el.paused) {
+        if (el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+          autoplayPendingRef.current = false;
+          pendingPlayRef.current = false;
+          void el.play().catch(() => void attemptPlay());
+        } else {
+          pendingPlayRef.current = true;
+        }
+      }
+      return;
     }
 
+    releaseWarmVideo(activeSourceUrl);
+    mountedStreamKeyRef.current = nextStreamKey;
+    el.src = activeSourceUrl;
+    playbackRetryKeyRef.current = null;
+    el.load();
+
     if (!shouldAutoplay) {
-      if (srcChanged && !el.paused) {
-        void el.play().catch(() => undefined);
-      }
       return;
     }
 
@@ -1090,7 +1106,7 @@ export function VideoPlayer({
 
     setPlaybackError(null);
     setIsStarting(true);
-    setIsBuffering(el.readyState < HTMLMediaElement.HAVE_FUTURE_DATA);
+    setIsBuffering(true);
     pendingPlayRef.current = true;
 
     void el
@@ -1675,6 +1691,12 @@ export function VideoPlayer({
   }, [activeSourceUrl, initialProgress]);
 
   useEffect(() => {
+    if (video.duration != null && video.duration > 0) {
+      setDuration(video.duration);
+    }
+  }, [video.duration, video.slug]);
+
+  useEffect(() => {
     if (!pseudoFullscreen) return;
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1928,7 +1950,6 @@ export function VideoPlayer({
         >
           <video
             ref={videoRef}
-            src={activeSourceUrl}
             className={cn(
               'pointer-events-none block h-full w-full',
               useContentSizedWrapper
@@ -1940,6 +1961,12 @@ export function VideoPlayer({
             playsInline
             preload="auto"
             poster={posterUrl}
+            onLoadedData={() => {
+              setIsStarting(false);
+              if (pendingPlayRef.current) {
+                void attemptPlay();
+              }
+            }}
             onPlay={() => {
               setPlaying(true);
               setIsBuffering(false);
@@ -2010,7 +2037,7 @@ export function VideoPlayer({
                       playbackRetryKeyRef.current = null;
                       activeSourceUrlRef.current = freshUrl;
                       el.src = freshUrl;
-                      primeVideoStream(freshUrl);
+                      warmVideoStream(freshUrl);
                       void el.play().catch(() => void attemptPlay());
                       return;
                     }
