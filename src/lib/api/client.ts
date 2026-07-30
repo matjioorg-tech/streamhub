@@ -1,10 +1,9 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import type { ApiResponse } from './types';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000/api/v1';
+import { getApiBaseUrl } from './config';
 
 export const apiClient = axios.create({
-  baseURL: API_URL,
+  baseURL: getApiBaseUrl(),
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -31,7 +30,7 @@ apiClient.interceptors.response.use(
       if (refreshToken) {
         try {
           const { data } = await axios.post<ApiResponse<{ accessToken: string; refreshToken: string }>>(
-            `${API_URL}/auth/refresh`,
+            `${getApiBaseUrl()}/auth/refresh`,
             { refreshToken },
           );
           localStorage.setItem('accessToken', data.data.accessToken);

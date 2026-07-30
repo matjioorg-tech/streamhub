@@ -68,8 +68,18 @@ export default function AdminVideosPage() {
       }
       setDeleteRequest(null);
       refetch();
-    } catch {
-      setError('Failed to delete video(s). Make sure you are logged in as admin.');
+    } catch (err) {
+      const message =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { message?: string | string[] } } }).response?.data
+              ?.message
+          : null;
+      const detail = Array.isArray(message) ? message.join(', ') : message;
+      setError(
+        detail
+          ? `Failed to delete video(s): ${detail}`
+          : 'Failed to delete video(s). Please try again.',
+      );
     } finally {
       setDeleting(false);
     }
