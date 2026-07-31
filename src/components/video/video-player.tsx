@@ -19,7 +19,11 @@ import type { Video, VideoQualityOption } from '@/lib/api/types';
 import { cn, formatDuration } from '@/lib/utils';
 import { pickAutoQualityOption } from '@/lib/video-quality';
 import { getStreamKey, isBrowserIncompatibleVideo, releaseWarmVideo, warmVideoStream } from '@/lib/video-cache';
-import { takeVideoAutoplayIntent } from '@/lib/video-autoplay';
+import {
+  VideoLoadDiagnostics,
+  isVideoDiagnosticsEnabled,
+} from '@/lib/video-player-diagnostics';
+import { takeVideoAutoplayIntent, needsMutedAutoplayKickstart } from '@/lib/video-autoplay';
 import { SeekFeedbackOverlay } from '@/components/video/seek-feedback-overlay';
 import {
   DEFAULT_VIDEO_ZOOM,
@@ -289,6 +293,7 @@ export function VideoPlayer({
   const [isStarting, setIsStarting] = useState(false);
   const pendingPlayRef = useRef(false);
   const autoplayPendingRef = useRef(false);
+  const autoplayMutedKickstartRef = useRef(false);
   const activeSourceUrlRef = useRef<string | null>(null);
   const mountedStreamKeyRef = useRef<string | null>(null);
   const playbackRetryKeyRef = useRef<string | null>(null);
@@ -334,6 +339,8 @@ export function VideoPlayer({
   const [fsPortraitChromeBottom, setFsPortraitChromeBottom] = useState(0);
   const [zoomContentSize, setZoomContentSize] = useState({ width: 0, height: 0 });
   const zoomContentSizeRef = useRef({ width: 0, height: 0 });
+  const diagRef = useRef<VideoLoadDiagnostics | null>(null);
+  const diagCleanupRef = useRef<(() => void) | null>(null);
 
   const qualityOptions: VideoQualityOption[] = useMemo(() => {
     if (video.qualities?.length) {
@@ -363,6 +370,25 @@ export function VideoPlayer({
       qualityOptions[0].url
     );
   }, [qualityOptions, selectedQuality]);
+
+  useEffect(() => {
+    if (!isVideoDiagnosticsEnabled()) return;
+    if (!diagRef.current || diagRef.current.slug !== video.slug) {
+      diagCleanupRef.current?.();
+      diagRef.current = new VideoLoadDiagnostics(video.slug, 'player');
+      diagRef.current.mark('player_render', {
+        autoPlay,
+        mimeType: video.mimeType,
+        duration: video.duration,
+      });
+    }
+    if (activeSourceUrl) {
+      diagRef.current.mark('active_source_resolved', {
+        streamKey: getStreamKey(activeSourceUrl),
+        urlLength: activeSourceUrl.length,
+      });
+    }
+  }, [activeSourceUrl, autoPlay, video.duration, video.mimeType, video.slug]);
 
   const activeQualityLabel = useMemo(() => {
     if (selectedQuality === 'auto') {
@@ -1008,15 +1034,33 @@ export function VideoPlayer({
     setIsStarting(true);
     setIsBuffering(el.readyState < HTMLMediaElement.HAVE_FUTURE_DATA);
 
-    try {
+    const tryPlay = async (mutedKickstart: boolean) => {
+      if (mutedKickstart) {
+        autoplayMutedKickstartRef.current = true;
+        el.muted = true;
+        setMuted(true);
+      }
       await el.play();
       pendingPlayRef.current = false;
       setIsBuffering(false);
       setIsStarting(false);
+    };
+
+    try {
+      await tryPlay(false);
       return;
     } catch (err) {
       const domError = err as DOMException;
       if (domError?.name === 'AbortError') return;
+      if (domError?.name === 'NotAllowedError' && needsMutedAutoplayKickstart()) {
+        try {
+          await tryPlay(true);
+          return;
+        } catch (retryErr) {
+          const retryDom = retryErr as DOMException;
+          if (retryDom?.name === 'AbortError') return;
+        }
+      }
     }
 
     try {
@@ -1066,11 +1110,17 @@ export function VideoPlayer({
   useLayoutEffect(() => {
     if (!activeSourceUrl) return;
 
+    const diag = diagRef.current;
     activeSourceUrlRef.current = activeSourceUrl;
+    diag?.mark('warm_stream_start', { streamKey: getStreamKey(activeSourceUrl) });
     warmVideoStream(activeSourceUrl);
 
     const el = videoRef.current;
     if (!el) return;
+
+    if (isVideoDiagnosticsEnabled() && !diagCleanupRef.current) {
+      diagCleanupRef.current = diag?.attachMediaElement(el) ?? null;
+    }
 
     const shouldAutoplay = autoplayPendingRef.current;
     const nextStreamKey = getStreamKey(activeSourceUrl);
@@ -1078,11 +1128,13 @@ export function VideoPlayer({
       mountedStreamKeyRef.current !== null && mountedStreamKeyRef.current === nextStreamKey;
 
     if (sameStream) {
+      diag?.mark('same_stream_skip', { nextStreamKey });
       releaseWarmVideo(activeSourceUrl);
       if (shouldAutoplay && el.paused) {
         if (el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
           autoplayPendingRef.current = false;
           pendingPlayRef.current = false;
+          diag?.mark('play_called', { reason: 'same_stream_resume' });
           void el.play().catch(() => void attemptPlay());
         } else {
           pendingPlayRef.current = true;
@@ -1093,9 +1145,13 @@ export function VideoPlayer({
 
     releaseWarmVideo(activeSourceUrl);
     mountedStreamKeyRef.current = nextStreamKey;
+    diag?.mark('src_assigned', {
+      streamKey: nextStreamKey,
+      previousSrc: el.src ? getStreamKey(el.src) : null,
+    });
     el.src = activeSourceUrl;
     playbackRetryKeyRef.current = null;
-    el.load();
+    diag?.mark('src_assigned_no_load');
 
     if (!shouldAutoplay) {
       return;
@@ -1107,17 +1163,37 @@ export function VideoPlayer({
     setIsBuffering(el.readyState < HTMLMediaElement.HAVE_FUTURE_DATA);
     pendingPlayRef.current = true;
 
+    if (needsMutedAutoplayKickstart()) {
+      autoplayMutedKickstartRef.current = true;
+      el.muted = true;
+      setMuted(true);
+    }
+
+    diag?.mark('play_called', { reason: 'autoplay_initial' });
     void el
       .play()
       .then(() => {
+        diag?.mark('play_promise_resolved');
         pendingPlayRef.current = false;
         setIsBuffering(false);
         setIsStarting(false);
       })
-      .catch(() => {
+      .catch((err) => {
+        diag?.mark('play_promise_rejected', {
+          name: err instanceof Error ? err.name : 'unknown',
+          message: err instanceof Error ? err.message : String(err),
+        });
         void attemptPlay();
       });
   }, [activeSourceUrl, attemptPlay, autoPlay, video.slug]);
+
+  useEffect(() => {
+    return () => {
+      diagCleanupRef.current?.();
+      diagCleanupRef.current = null;
+      diagRef.current?.report();
+    };
+  }, [video.slug]);
 
   const resumePlaybackIfNeeded = useCallback(() => {
     const el = videoRef.current;
@@ -1958,6 +2034,7 @@ export function VideoPlayer({
             )}
             playsInline
             preload="auto"
+            muted={muted}
             poster={posterUrl}
             onLoadedMetadata={(e) => {
               setDuration(e.currentTarget.duration);
@@ -2003,6 +2080,15 @@ export function VideoPlayer({
               setIsBuffering(false);
               setIsStarting(false);
               pendingPlayRef.current = false;
+
+              const el = videoRef.current;
+              if (el && autoplayMutedKickstartRef.current) {
+                autoplayMutedKickstartRef.current = false;
+                if (volume > 0) {
+                  el.muted = false;
+                  setMuted(false);
+                }
+              }
             }}
             onTimeUpdate={(e) => {
               if (!isScrubbingRef.current) {

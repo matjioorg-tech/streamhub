@@ -10,3 +10,13 @@ export function takeVideoAutoplayIntent(slug: string): boolean {
   pendingAutoplaySlug = null;
   return true;
 }
+
+/** iOS Safari blocks unmuted autoplay — start muted, then unmute after playback begins. */
+export function needsMutedAutoplayKickstart(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  const isIOS =
+    /iPhone|iPad|iPod/i.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return isIOS;
+}

@@ -3,9 +3,8 @@ import { videosApi } from '@/lib/api';
 import type { PaginatedResponse, Video } from '@/lib/api/types';
 
 const CDN_ORIGIN = 'https://media.telnewstreams.dpdns.org';
-/** Cover large moov atoms on long videos (~2–3 MB). */
-const RANGE_WARM_BYTES = 3 * 1024 * 1024;
-const RANGE_CHUNK = 512 * 1024;
+/** First init segment + moov — enough to prime without competing with the main player. */
+const RANGE_WARM_BYTES = 512 * 1024;
 
 function hasPlaybackUrl(video: Video): boolean {
   return Boolean(video.cdnUrl || (video.qualities && video.qualities.length > 0));
@@ -55,20 +54,15 @@ function prefetchRange(url: string, streamKey: string): void {
   if (rangeWarmed.has(streamKey)) return;
   rangeWarmed.add(streamKey);
 
-  const chunks = Math.ceil(RANGE_WARM_BYTES / RANGE_CHUNK);
-  for (let i = 0; i < chunks; i++) {
-    const start = i * RANGE_CHUNK;
-    const end = Math.min(RANGE_WARM_BYTES - 1, start + RANGE_CHUNK - 1);
-    void fetch(url, {
-      method: 'GET',
-      headers: { Range: `bytes=${start}-${end}` },
-      mode: 'cors',
-      credentials: 'omit',
-      priority: 'high',
-    }).catch(() => {
-      if (i === 0) rangeWarmed.delete(streamKey);
-    });
-  }
+  void fetch(url, {
+    method: 'GET',
+    headers: { Range: `bytes=0-${RANGE_WARM_BYTES - 1}` },
+    mode: 'cors',
+    credentials: 'omit',
+    priority: 'low',
+  }).catch(() => {
+    rangeWarmed.delete(streamKey);
+  });
 }
 
 /** Hidden `<video>` — metadata only so it doesn't compete with the main player download. */
@@ -85,7 +79,6 @@ function primeMediaElement(url: string, streamKey: string): void {
     'position:fixed;width:0;height:0;opacity:0;pointer-events:none;left:-9999px;top:-9999px';
   el.src = url;
   document.body.appendChild(el);
-  el.load();
 
   const timer = setTimeout(() => {
     el.remove();

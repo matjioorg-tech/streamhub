@@ -10,6 +10,7 @@ import { VideoSuggestions } from '@/components/video/video-suggestions';
 import { AdminVideoEditButton } from '@/components/admin/admin-video-edit-button';
 import { useVideo, useNearbyVideos } from '@/hooks/use-videos';
 import { warmVideoStream, findVideoInCache, getVideoStreamUrl } from '@/lib/video-cache';
+import { markWatchPage } from '@/lib/video-player-diagnostics';
 import { formatViews, formatDuration, formatUploadLabel, cn } from '@/lib/utils';
 import { Eye, Calendar, Film, Clock } from 'lucide-react';
 import type { Video } from '@/lib/api/types';
@@ -25,6 +26,20 @@ export default function WatchPage({
   const { data: nearby, isLoading: nearbyLoading } = useNearbyVideos(slug, 8);
   const [editedVideo, setEditedVideo] = useState<Video | null>(null);
   const displayVideo = editedVideo ?? video;
+
+  useLayoutEffect(() => {
+    markWatchPage(slug, 'watch_page_mount');
+  }, [slug]);
+
+  useLayoutEffect(() => {
+    if (displayVideo) {
+      markWatchPage(slug, 'video_data_ready', {
+        fromCache: Boolean(video && !isLoading),
+        hasCdnUrl: Boolean(displayVideo.cdnUrl),
+        mimeType: displayVideo.mimeType,
+      });
+    }
+  }, [displayVideo, isLoading, slug, video]);
 
   useLayoutEffect(() => {
     const cached = findVideoInCache(queryClient, slug);
