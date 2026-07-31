@@ -114,7 +114,7 @@ export function releaseWarmVideo(url: string): void {
   }, 15_000);
 }
 
-/** Preconnect + parallel range prefetch + metadata warm — call on card tap/hover. */
+/** Preconnect + parallel range prefetch — call on card tap/hover. */
 export function warmVideoStream(url: string): void {
   if (!url || typeof document === 'undefined') return;
 
@@ -123,7 +123,6 @@ export function warmVideoStream(url: string): void {
 
   const streamKey = getStreamKey(url);
   prefetchRange(url, streamKey);
-  primeMediaElement(url, streamKey);
 }
 
 /** @deprecated Use warmVideoStream */

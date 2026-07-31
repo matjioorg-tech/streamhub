@@ -1150,8 +1150,9 @@ export function VideoPlayer({
       previousSrc: el.src ? getStreamKey(el.src) : null,
     });
     el.src = activeSourceUrl;
+    el.load();
     playbackRetryKeyRef.current = null;
-    diag?.mark('src_assigned_no_load');
+    diag?.mark('src_assigned');
 
     if (!shouldAutoplay) {
       return;
@@ -1947,7 +1948,7 @@ export function VideoPlayer({
       if (el.paused) {
         setPlaybackError('Tap play to start playback');
       }
-    }, 12000);
+    }, 25000);
 
     return () => clearTimeout(timeout);
   }, [isStarting, isBuffering, activeSourceUrl]);
@@ -2032,10 +2033,10 @@ export function VideoPlayer({
                   ? 'object-contain'
                   : 'object-cover sm:object-contain',
             )}
-            playsInline
             preload="auto"
             muted={muted}
             poster={posterUrl}
+            playsInline
             onLoadedMetadata={(e) => {
               setDuration(e.currentTarget.duration);
               if (pendingPlayRef.current && e.currentTarget.paused) {
