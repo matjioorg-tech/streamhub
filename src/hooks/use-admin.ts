@@ -50,18 +50,6 @@ export function useRegenerateVideoMetadata() {
   });
 }
 
-export function useReprocessVideoStream() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => adminApi.reprocessVideoStream(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'videos'] });
-      queryClient.invalidateQueries({ queryKey: ['videos'] });
-      queryClient.invalidateQueries({ queryKey: ['video'] });
-    },
-  });
-}
-
 export function useFailedUploads() {
   return useQuery({
     queryKey: ['admin', 'uploads', 'failed'],

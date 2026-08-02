@@ -1,6 +1,9 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import type { ApiResponse } from './types';
 import { getApiBaseUrl } from './config';
+import { getScopedUserId } from '@/lib/auth/session';
+
+export const SCOPED_USER_HEADER = 'x-scoped-user-id';
 
 export const apiClient = axios.create({
   baseURL: getApiBaseUrl(),
@@ -12,6 +15,10 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('accessToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    const scopedUserId = getScopedUserId();
+    if (scopedUserId) {
+      config.headers[SCOPED_USER_HEADER] = scopedUserId;
     }
   }
   return config;

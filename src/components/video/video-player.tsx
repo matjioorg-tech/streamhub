@@ -1967,7 +1967,7 @@ export function VideoPlayer({
         <AlertCircle className="h-8 w-8 text-amber-400" />
         <p className="text-sm text-zinc-200">This video format is not supported for playback.</p>
         <p className="text-xs text-zinc-500">
-          The file needs to be reprocessed to MP4. Ask an admin to run reprocess-stream.
+          Upload the video again so it can be remuxed to a supported MP4 format.
         </p>
       </div>
     );

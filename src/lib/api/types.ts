@@ -116,6 +116,7 @@ export interface User {
   displayName: string;
   role: string;
   avatarUrl: string | null;
+  telegramChatId?: string | null;
 }
 
 export interface AuthTokens {

@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { MobileNav } from '@/components/layout/mobile-nav';
+import { AppGuard } from '@/components/auth/app-guard';
 import { cn } from '@/lib/utils';
 
 export function PageLayout({
@@ -35,7 +36,7 @@ export function PageLayout({
           className,
         )}
       >
-        {children}
+        <AppGuard>{children}</AppGuard>
       </main>
       {!hideFooter && <Footer compact={showMobileNav} />}
       {showMobileNav && <MobileNav />}

@@ -1,4 +1,5 @@
 const USER_KEY = 'user';
+const SCOPED_USER_ID_KEY = 'scopedUserId';
 
 export interface StoredUser {
   id: string;
@@ -6,6 +7,7 @@ export interface StoredUser {
   displayName: string;
   role: string;
   avatarUrl: string | null;
+  telegramChatId?: string | null;
 }
 
 export function getAccessToken(): string | null {
@@ -41,6 +43,20 @@ export function clearSession(): void {
   localStorage.removeItem('accessToken');
   localStorage.removeItem('refreshToken');
   localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(SCOPED_USER_ID_KEY);
+}
+
+export function getScopedUserId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(SCOPED_USER_ID_KEY);
+}
+
+export function setScopedUserId(userId: string): void {
+  localStorage.setItem(SCOPED_USER_ID_KEY, userId);
+}
+
+export function clearScopedUserId(): void {
+  localStorage.removeItem(SCOPED_USER_ID_KEY);
 }
 
 export function isAdminUser(user: StoredUser | null): boolean {

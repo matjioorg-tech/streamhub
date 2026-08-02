@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authApi } from '@/lib/api';
+import { setSession } from '@/lib/auth/session';
 import { cn } from '@/lib/utils';
 
 const loginSchema = z.object({
@@ -28,8 +29,7 @@ export function LoginForm() {
     setError(null);
     try {
       const result = await authApi.login(data.email, data.password);
-      localStorage.setItem('accessToken', result.tokens.accessToken);
-      localStorage.setItem('refreshToken', result.tokens.refreshToken);
+      setSession(result.tokens, result.user);
       router.push('/');
     } catch {
       setError('Invalid email or password');

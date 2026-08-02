@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authApi } from '@/lib/api';
-import { setSession } from '@/lib/auth/session';
+import { setSession, setScopedUserId } from '@/lib/auth/session';
 import { cn } from '@/lib/utils';
 
 const loginSchema = z.object({
@@ -34,6 +34,7 @@ export function AdminLoginForm() {
         return;
       }
       setSession(result.tokens, result.user);
+      setScopedUserId(result.user.id);
       router.replace('/admin');
     } catch {
       setError('Invalid email or password');

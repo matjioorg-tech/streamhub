@@ -111,6 +111,14 @@ export const authApi = {
     return unwrap(response);
   },
 
+  updateProfile: async (input: {
+    displayName?: string;
+    telegramChatId?: string | null;
+  }): Promise<User> => {
+    const response = await apiClient.patch('/auth/me', input);
+    return unwrap(response);
+  },
+
   previewInvitation: async (token: string): Promise<InvitationPreview> => {
     const response = await apiClient.get(`/auth/invitations/${token}`);
     return unwrap(response);
@@ -131,6 +139,11 @@ export const authApi = {
 };
 
 export const adminApi = {
+  listUsers: async (): Promise<User[]> => {
+    const response = await apiClient.get('/admin/users');
+    return unwrap(response);
+  },
+
   dashboard: async (): Promise<DashboardStats> => {
     const response = await apiClient.get('/admin/dashboard');
     return unwrap(response);
@@ -168,11 +181,6 @@ export const adminApi = {
 
   regenerateVideoMetadata: async (id: string): Promise<GeneratedVideoMetadata | null> => {
     const response = await apiClient.post(`/admin/videos/${id}/regenerate-metadata`);
-    return unwrap(response);
-  },
-
-  reprocessVideoStream: async (id: string): Promise<{ ok: boolean; message: string }> => {
-    const response = await apiClient.post(`/admin/videos/${id}/reprocess-stream`);
     return unwrap(response);
   },
 

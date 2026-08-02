@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Film,
   HardDrive,
@@ -14,12 +15,15 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { authApi } from '@/lib/api';
+import { adminApi, authApi } from '@/lib/api';
+import type { User } from '@/lib/api/types';
 import {
   clearSession,
   getAccessToken,
+  getScopedUserId,
   getStoredUser,
   isAdminUser,
+  setScopedUserId,
   storeUser,
 } from '@/lib/auth/session';
 import { cn } from '@/lib/utils';
@@ -32,6 +36,51 @@ const navLinks = [
   { href: '/admin/terabox', label: 'TeraBox', icon: HardDrive },
   { href: '/admin/invitations', label: 'Invitations', icon: Mail },
 ];
+
+function AdminUserPicker() {
+  const queryClient = useQueryClient();
+  const currentUser = getStoredUser();
+  const [selectedUserId, setSelectedUserId] = useState(
+    () => getScopedUserId() ?? currentUser?.id ?? '',
+  );
+
+  const { data: users = [] } = useQuery({
+    queryKey: ['admin', 'users'],
+    queryFn: () => adminApi.listUsers(),
+  });
+
+  useEffect(() => {
+    if (!selectedUserId && currentUser?.id) {
+      setScopedUserId(currentUser.id);
+      setSelectedUserId(currentUser.id);
+    }
+  }, [currentUser?.id, selectedUserId]);
+
+  const handleChange = (userId: string) => {
+    setSelectedUserId(userId);
+    setScopedUserId(userId);
+    queryClient.invalidateQueries({ queryKey: ['admin'] });
+  };
+
+  if (users.length === 0) return null;
+
+  return (
+    <label className="flex w-full flex-col gap-1 lg:w-auto lg:flex-row lg:items-center">
+      <span className="text-xs text-zinc-500">Viewing as</span>
+      <select
+        value={selectedUserId}
+        onChange={(event) => handleChange(event.target.value)}
+        className="w-full max-w-none truncate rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-white lg:max-w-[200px]"
+      >
+        {users.map((user: User) => (
+          <option key={user.id} value={user.id}>
+            {user.displayName} ({user.email})
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 function AdminNav() {
   const pathname = usePathname();
@@ -88,6 +137,9 @@ function AdminNav() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
+          <div className="hidden lg:block">
+            <AdminUserPicker />
+          </div>
           {user && (
             <span className="hidden max-w-[140px] truncate text-sm text-zinc-500 lg:inline">
               {user.email}
@@ -126,6 +178,9 @@ function AdminNav() {
                 <p className="mt-1 truncate text-sm font-medium text-white">{user.email}</p>
               </div>
             )}
+            <div className="mb-4 lg:hidden">
+              <AdminUserPicker />
+            </div>
             <div className="flex flex-col gap-1">
               {navLinks.map(({ href, label, exact, icon: Icon }) => {
                 const active = exact ? pathname === href : pathname.startsWith(href);
@@ -205,6 +260,9 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
           return;
         }
         storeUser(user);
+        if (!getScopedUserId()) {
+          setScopedUserId(user.id);
+        }
         if (!cancelled) setReady(true);
       } catch {
         clearSession();
