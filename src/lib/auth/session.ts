@@ -7,7 +7,9 @@ export interface StoredUser {
   displayName: string;
   role: string;
   avatarUrl: string | null;
-  telegramChatId?: string | null;
+  telegramLinked?: boolean;
+  telegramLinkCode?: string | null;
+  telegramLinkCodeExpiresAt?: string | null;
 }
 
 export function getAccessToken(): string | null {

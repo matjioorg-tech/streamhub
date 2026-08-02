@@ -116,7 +116,15 @@ export interface User {
   displayName: string;
   role: string;
   avatarUrl: string | null;
+  telegramLinked?: boolean;
+  telegramLinkCode?: string | null;
+  telegramLinkCodeExpiresAt?: string | null;
   telegramChatId?: string | null;
+}
+
+export interface TelegramLinkCodeResponse {
+  code: string;
+  expiresAt: string;
 }
 
 export interface AuthTokens {

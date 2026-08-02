@@ -16,6 +16,7 @@ import type {
   StorageObjectsResponse,
   CreateInvitationResult,
   User,
+  TelegramLinkCodeResponse,
   TeraboxSettings,
   TeraboxTestResult,
   UpdateVideoInput,
@@ -113,9 +114,18 @@ export const authApi = {
 
   updateProfile: async (input: {
     displayName?: string;
-    telegramChatId?: string | null;
   }): Promise<User> => {
     const response = await apiClient.patch('/auth/me', input);
+    return unwrap(response);
+  },
+
+  createTelegramLinkCode: async (): Promise<TelegramLinkCodeResponse> => {
+    const response = await apiClient.post('/auth/telegram-link-code');
+    return unwrap(response);
+  },
+
+  unlinkTelegram: async (): Promise<User> => {
+    const response = await apiClient.delete('/auth/telegram-link');
     return unwrap(response);
   },
 
