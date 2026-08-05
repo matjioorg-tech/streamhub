@@ -37,7 +37,7 @@ export function Pagination({ meta, onPageChange, className }: PaginationProps) {
       aria-label="Pagination"
       className={cn('flex flex-col items-center gap-3 sm:flex-row sm:justify-between', className)}
     >
-      <p className="text-xs text-zinc-500 sm:text-sm">
+      <p className="text-xs text-yt-text-tertiary sm:text-sm">
         Showing {(meta.page - 1) * meta.limit + 1}–
         {Math.min(meta.page * meta.limit, meta.total)} of {meta.total}
       </p>
@@ -48,7 +48,7 @@ export function Pagination({ meta, onPageChange, className }: PaginationProps) {
           onClick={() => onPageChange(meta.page - 1)}
           disabled={!meta.hasPreviousPage}
           aria-label="Previous page"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-300 transition enabled:hover:border-zinc-600 enabled:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+          className="pro-btn pro-btn-secondary inline-flex h-9 w-9 p-0 disabled:cursor-not-allowed"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -56,7 +56,7 @@ export function Pagination({ meta, onPageChange, className }: PaginationProps) {
         <div className="hidden items-center gap-1 sm:flex">
           {pages.map((page, index) =>
             page === 'ellipsis' ? (
-              <span key={`ellipsis-${index}`} className="px-1 text-zinc-600">
+              <span key={`ellipsis-${index}`} className="px-1 text-yt-text-tertiary">
                 …
               </span>
             ) : (
@@ -68,8 +68,8 @@ export function Pagination({ meta, onPageChange, className }: PaginationProps) {
                 className={cn(
                   'inline-flex h-9 min-w-9 items-center justify-center rounded-lg px-2 text-sm font-medium transition',
                   page === meta.page
-                    ? 'bg-red-600 text-white'
-                    : 'border border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-800',
+                    ? 'bg-white text-yt-bg'
+                    : 'pro-btn-secondary h-9 min-w-9 p-0',
                 )}
               >
                 {page}
@@ -78,7 +78,7 @@ export function Pagination({ meta, onPageChange, className }: PaginationProps) {
           )}
         </div>
 
-        <span className="px-2 text-sm text-zinc-400 sm:hidden">
+        <span className="px-2 text-sm text-yt-text-secondary sm:hidden">
           {meta.page} / {meta.totalPages}
         </span>
 
@@ -87,7 +87,7 @@ export function Pagination({ meta, onPageChange, className }: PaginationProps) {
           onClick={() => onPageChange(meta.page + 1)}
           disabled={!meta.hasNextPage}
           aria-label="Next page"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-300 transition enabled:hover:border-zinc-600 enabled:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+          className="pro-btn pro-btn-secondary inline-flex h-9 w-9 p-0 disabled:cursor-not-allowed"
         >
           <ChevronRight className="h-4 w-4" />
         </button>

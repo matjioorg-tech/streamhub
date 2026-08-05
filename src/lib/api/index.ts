@@ -32,6 +32,7 @@ export interface VideoQueryParams {
   category?: string;
   subCategory?: string;
   tag?: string;
+  status?: string;
   sortBy?: string;
   sortOrder?: 'ASC' | 'DESC';
 }
@@ -59,6 +60,26 @@ export const videosApi = {
 
   nearby: async (slug: string, limit = 8): Promise<NearbyVideos> => {
     const response = await apiClient.get(`/watch/${slug}/nearby`, { params: { limit } });
+    return unwrap(response);
+  },
+
+  listMine: async (params?: VideoQueryParams): Promise<PaginatedResponse<Video>> => {
+    const response = await apiClient.get('/videos/mine', { params });
+    return unwrap(response);
+  },
+
+  updateVideo: async (id: string, input: UpdateVideoInput): Promise<Video> => {
+    const response = await apiClient.patch(`/videos/${id}`, input);
+    return unwrap(response);
+  },
+
+  deleteVideo: async (id: string): Promise<void> => {
+    const response = await apiClient.delete(`/videos/${id}`);
+    unwrap(response);
+  },
+
+  retryUpload: async (id: string): Promise<UploadTask> => {
+    const response = await apiClient.post(`/videos/${id}/retry-upload`);
     return unwrap(response);
   },
 

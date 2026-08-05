@@ -43,7 +43,7 @@ import {
 } from '@/lib/video-player-zoom';
 
 const SEEK_SECONDS = 10;
-const DOUBLE_TAP_MS = 320;
+const DOUBLE_TAP_MS = 380;
 const CONTROLS_HIDE_MS = 3500;
 const SPEED_MIN = 0.5;
 const SPEED_MAX = 4;
@@ -51,14 +51,16 @@ const SPEED_DEFAULT = 1;
 const SPEED_HOLD_RATE = 2;
 const SPEED_STEP = 0.5;
 const SPEED_SWIPE_PX = 48;
-const SPEED_HOLD_MS = 180;
+const SPEED_HOLD_MS = 220;
 const SPEED_STEP_INDEXES = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4] as const;
 const SPEED_HOLD_INDEX = SPEED_STEP_INDEXES.indexOf(SPEED_HOLD_RATE);
 const TAP_MOVE_THRESHOLD = 10;
 const HOLD_CANCEL_PX = 22;
 const TAP_SUPPRESS_MS = 350;
 const PROGRESS_PAD = 12;
-const SWIPE_SEEK_PX = 40;
+const SWIPE_SEEK_PX = 32;
+const SWIPE_SEEK_MAX_SECONDS = 60;
+const EDGE_TAP_RATIO = 0.3;
 
 interface LocalPointer {
   localX: number;
@@ -111,13 +113,26 @@ async function requestElementFullscreen(el: HTMLElement): Promise<void> {
 }
 
 async function exitElementFullscreen(): Promise<void> {
-  const doc = document as Document & { webkitExitFullscreen?: () => Promise<void> };
-  if (document.fullscreenElement) {
+  const doc = document as Document & {
+    webkitExitFullscreen?: () => Promise<void>;
+    mozCancelFullScreen?: () => Promise<void>;
+    webkitFullscreenElement?: Element | null;
+    mozFullScreenElement?: Element | null;
+  };
+  const fsEl =
+    document.fullscreenElement ?? doc.webkitFullscreenElement ?? doc.mozFullScreenElement;
+  if (!fsEl) return;
+
+  if (document.exitFullscreen) {
     await document.exitFullscreen();
     return;
   }
   if (doc.webkitExitFullscreen) {
     await doc.webkitExitFullscreen();
+    return;
+  }
+  if (doc.mozCancelFullScreen) {
+    await doc.mozCancelFullScreen();
   }
 }
 
@@ -464,12 +479,56 @@ export function VideoPlayer({
     }
   }, []);
 
+  const shouldKeepControlsVisible = useCallback(() => {
+    return (
+      !playing ||
+      isScrubbingRef.current ||
+      showQualityMenu ||
+      showSpeedOverlay ||
+      !!playbackError ||
+      speedGestureRef.current.active ||
+      isSpeedGesturingRef.current
+    );
+  }, [playing, showQualityMenu, showSpeedOverlay, playbackError]);
+
   const scheduleHideControls = useCallback(() => {
     clearHideTimer();
+    if (shouldKeepControlsVisible()) return;
+
     hideTimerRef.current = setTimeout(() => {
+      if (shouldKeepControlsVisible()) return;
       setShowControls(false);
+      setShowQualityMenu(false);
     }, CONTROLS_HIDE_MS);
-  }, [clearHideTimer]);
+  }, [clearHideTimer, shouldKeepControlsVisible]);
+
+  const revealControls = useCallback(
+    (options?: { scheduleHide?: boolean }) => {
+      setShowControls(true);
+      if (options?.scheduleHide !== false && playing) {
+        scheduleHideControls();
+      } else {
+        clearHideTimer();
+      }
+    },
+    [clearHideTimer, playing, scheduleHideControls],
+  );
+
+  const lastControlsActivityRef = useRef(0);
+
+  const bumpControlsActivity = useCallback(() => {
+    const now = Date.now();
+    if (now - lastControlsActivityRef.current < 200) return;
+    lastControlsActivityRef.current = now;
+
+    if (!playing) {
+      setShowControls(true);
+      clearHideTimer();
+      return;
+    }
+
+    revealControls();
+  }, [clearHideTimer, playing, revealControls]);
 
   const seekRelative = useCallback((delta: number) => {
     const el = videoRef.current;
@@ -478,13 +537,13 @@ export function VideoPlayer({
     setCurrentTime(el.currentTime);
   }, []);
 
-  const showSeekFeedback = useCallback((direction: 'back' | 'forward') => {
+  const showSeekFeedback = useCallback((direction: 'back' | 'forward', amount = SEEK_SECONDS) => {
     const now = Date.now();
     const burst = seekBurstRef.current;
     const seconds =
       burst.direction === direction && now - burst.burstAt < 900
-        ? burst.seconds + SEEK_SECONDS
-        : SEEK_SECONDS;
+        ? burst.seconds + amount
+        : amount;
 
     seekBurstRef.current = { direction, seconds, burstAt: now };
     setSeekFeedback({ direction, seconds, animationKey: now });
@@ -571,6 +630,17 @@ export function VideoPlayer({
     }
     return getLocalPointerCoords(clientX, clientY, container);
   }, []);
+
+  const getTapZone = useCallback(
+    (clientX: number, clientY: number): 'left' | 'right' | 'center' => {
+      const local = getPointerLocal(clientX, clientY);
+      const ratio = local.localX / local.width;
+      if (ratio < EDGE_TAP_RATIO) return 'left';
+      if (ratio > 1 - EDGE_TAP_RATIO) return 'right';
+      return 'center';
+    },
+    [getPointerLocal],
+  );
 
   const endSpeedGesture = useCallback(() => {
     const g = speedGestureRef.current;
@@ -930,8 +1000,11 @@ export function VideoPlayer({
           Math.abs(deltaX) > SWIPE_SEEK_PX &&
           Math.abs(deltaX) > Math.abs(deltaY) * 1.2
         ) {
-          seekRelative(deltaX > 0 ? SEEK_SECONDS : -SEEK_SECONDS);
-          showSeekFeedback(deltaX > 0 ? 'forward' : 'back');
+          const seekSteps = Math.max(1, Math.round(Math.abs(deltaX) / SWIPE_SEEK_PX));
+          const seekAmount = Math.min(seekSteps * SEEK_SECONDS, SWIPE_SEEK_MAX_SECONDS);
+          const direction = deltaX > 0 ? 'forward' : 'back';
+          seekRelative(deltaX > 0 ? seekAmount : -seekAmount);
+          showSeekFeedback(direction, seekAmount);
           suppressTapUntilRef.current = Date.now() + TAP_SUPPRESS_MS;
           pointerSessionRef.current.moved = true;
           return;
@@ -943,11 +1016,12 @@ export function VideoPlayer({
 
       if (g.holdTimer) clearTimeout(g.holdTimer);
       g.holdTimer = setTimeout(() => {
-        if (g.pointerId === pointerId && !isScrubbingRef.current) {
-          const { clientX } = lastPointerRef.current;
-          activateSpeedGesture(clientX);
-          updateSpeedFromPointer(clientX);
-        }
+        if (g.pointerId !== pointerId || isScrubbingRef.current) return;
+        const zone = getTapZone(pointerStartRef.current.x, pointerStartRef.current.y);
+        if (zone !== 'center') return;
+        const { clientX } = lastPointerRef.current;
+        activateSpeedGesture(clientX);
+        updateSpeedFromPointer(clientX);
       }, SPEED_HOLD_MS);
 
       let usedPointerEvents = false;
@@ -1020,6 +1094,7 @@ export function VideoPlayer({
       cleanupDocumentGesture,
       endSpeedGesture,
       getPointerLocal,
+      getTapZone,
       seekRelative,
       showSeekFeedback,
       updateSpeedFromPointer,
@@ -1307,6 +1382,11 @@ export function VideoPlayer({
       const el = videoRef.current as WebKitVideoElement | null;
       if (!container || !el) return;
 
+      if (document.fullscreenElement) {
+        await exitFullscreenMode();
+        return;
+      }
+
       const wasPlaying = !el.paused;
       capturePlaybackForFullscreen();
 
@@ -1322,16 +1402,19 @@ export function VideoPlayer({
 
         if (wasPlaying) resumePlaybackIfNeeded();
       } catch {
+        if (document.fullscreenElement) return;
         if (el.webkitEnterFullscreen && enterIosNativeFullscreen()) return;
+        if (!isMobileDevice() && !isIosDevice()) return;
         enterPseudoFullscreen();
       }
     })();
-  }, [capturePlaybackForFullscreen, enterIosNativeFullscreen, enterPseudoFullscreen, resumePlaybackIfNeeded]);
+  }, [capturePlaybackForFullscreen, enterIosNativeFullscreen, enterPseudoFullscreen, exitFullscreenMode, resumePlaybackIfNeeded]);
 
   const toggleFullscreen = useCallback(async () => {
     const el = videoRef.current as WebKitVideoElement | null;
     const isNativeIosFs = isIosDevice() && !!el?.webkitDisplayingFullscreen;
-    const isFs = !!document.fullscreenElement || isNativeIosFs || pseudoFullscreen;
+    const isFs =
+      !!document.fullscreenElement || isNativeIosFs || pseudoFullscreen || isFullscreen;
 
     if (isFs) {
       await exitFullscreenMode();
@@ -1339,32 +1422,14 @@ export function VideoPlayer({
     }
 
     enterFullscreenWithLandscape();
-  }, [enterFullscreenWithLandscape, exitFullscreenMode, pseudoFullscreen]);
+  }, [enterFullscreenWithLandscape, exitFullscreenMode, isFullscreen, pseudoFullscreen]);
 
   const handleFullscreenClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      const el = videoRef.current as WebKitVideoElement | null;
-
-      if (el?.webkitDisplayingFullscreen || pseudoFullscreen) {
-        void exitFullscreenMode();
-        return;
-      }
-
-      enterFullscreenWithLandscape();
+      void toggleFullscreen();
     },
-    [enterFullscreenWithLandscape, exitFullscreenMode, pseudoFullscreen],
-  );
-
-  const getTapZone = useCallback(
-    (clientX: number, clientY: number): 'left' | 'right' | 'center' => {
-      const local = getPointerLocal(clientX, clientY);
-      const ratio = local.localX / local.width;
-      if (ratio < 0.35) return 'left';
-      if (ratio > 0.65) return 'right';
-      return 'center';
-    },
-    [getPointerLocal],
+    [toggleFullscreen],
   );
 
   const handleTap = useCallback(
@@ -1391,8 +1456,7 @@ export function VideoPlayer({
           showSeekFeedback('forward');
         }
         lastTapRef.current = null;
-        setShowControls(true);
-        scheduleHideControls();
+        revealControls();
         return;
       }
 
@@ -1427,8 +1491,7 @@ export function VideoPlayer({
             next.scale <= 1 && Math.abs(next.x) < 0.01 && videoZoomRef.current.scale > 1.05;
           applyVideoZoom(next, { animateSnap: snapToFit });
         }
-        setShowControls(true);
-        scheduleHideControls();
+        revealControls();
         return;
       }
 
@@ -1439,13 +1502,16 @@ export function VideoPlayer({
           centerTapTimerRef.current = null;
           if (!playing) {
             togglePlay();
-            setShowControls(true);
-            scheduleHideControls();
+            revealControls({ scheduleHide: false });
           } else {
             setShowControls((prev) => {
               const next = !prev;
-              if (next) scheduleHideControls();
-              else clearHideTimer();
+              if (next) {
+                scheduleHideControls();
+              } else {
+                clearHideTimer();
+                setShowQualityMenu(false);
+              }
               return next;
             });
           }
@@ -1461,14 +1527,22 @@ export function VideoPlayer({
         return;
       }
 
-      setShowControls(true);
-      scheduleHideControls();
+      if (zone === 'left') {
+        seekRelative(-SEEK_SECONDS);
+        showSeekFeedback('back');
+      } else if (zone === 'right') {
+        seekRelative(SEEK_SECONDS);
+        showSeekFeedback('forward');
+      }
+
+      revealControls();
     },
     [
       clearHideTimer,
       applyVideoZoom,
       getTapZone,
       playing,
+      revealControls,
       scheduleHideControls,
       seekRelative,
       showSeekFeedback,
@@ -1564,8 +1638,7 @@ export function VideoPlayer({
       isScrubbingRef.current = true;
       setIsScrubbing(true);
       setGestureActive(true);
-      setShowControls(true);
-      clearHideTimer();
+      revealControls({ scheduleHide: false });
       updateProgressFromPointer(clientX);
 
       try {
@@ -1585,7 +1658,7 @@ export function VideoPlayer({
         document.removeEventListener('pointercancel', onDocEnd);
       };
     },
-    [clearHideTimer, endScrubSession, updateProgressFromPointer],
+    [endScrubSession, revealControls, updateProgressFromPointer],
   );
 
   useEffect(() => {
@@ -1855,8 +1928,7 @@ export function VideoPlayer({
         case 'K':
           e.preventDefault();
           togglePlay();
-          setShowControls(true);
-          scheduleHideControls();
+          revealControls();
           break;
         case 'f':
         case 'F':
@@ -1892,7 +1964,7 @@ export function VideoPlayer({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [scheduleHideControls, seekRelative, showSeekFeedback, toggleFullscreen, togglePlay]);
+  }, [revealControls, seekRelative, showSeekFeedback, toggleFullscreen, togglePlay]);
 
   useEffect(() => {
     return () => {
@@ -1905,18 +1977,31 @@ export function VideoPlayer({
   }, [clearHideTimer]);
 
   useEffect(() => {
-    if ((isFullscreen || pseudoFullscreen) && playing && showControls) {
-      scheduleHideControls();
-    }
-  }, [isFullscreen, pseudoFullscreen, playing, showControls, scheduleHideControls]);
-
-  useEffect(() => {
-    if (playing && showControls) {
-      scheduleHideControls();
-    } else {
+    if (!playing) {
       clearHideTimer();
+      setShowControls(true);
+      return;
     }
-  }, [playing, showControls, scheduleHideControls, clearHideTimer]);
+
+    if (shouldKeepControlsVisible()) {
+      clearHideTimer();
+      return;
+    }
+
+    if (showControls) {
+      scheduleHideControls();
+    }
+  }, [
+    playing,
+    showControls,
+    showQualityMenu,
+    showSpeedOverlay,
+    playbackError,
+    isScrubbing,
+    scheduleHideControls,
+    clearHideTimer,
+    shouldKeepControlsVisible,
+  ]);
 
   useEffect(() => {
     if (!isFullscreen && !pseudoFullscreen) {
@@ -1988,18 +2073,19 @@ export function VideoPlayer({
     inFullscreen && zoomEnabled && activeZoomContent.width > 0;
 
   const playerMarkup = (
-    <div
-      ref={containerRef}
-      className={cn(
-        'group/player relative w-full overflow-hidden select-none',
-        inFullscreen ? 'bg-[#212121]' : 'bg-black',
-        'aspect-video',
-        'rounded-none sm:rounded-xl',
-        (isFullscreen || pseudoFullscreen) && 'aspect-auto h-full max-h-none rounded-none',
-        pseudoFullscreen && 'player-pseudo-fullscreen',
-        gestureActive && 'touch-none',
-      )}
-    >
+      <div
+        ref={containerRef}
+        className={cn(
+          'group/player relative w-full overflow-hidden select-none',
+          inFullscreen ? 'bg-[#212121]' : 'bg-black',
+          'aspect-video',
+          'rounded-none sm:rounded-xl',
+          (isFullscreen || pseudoFullscreen) && 'aspect-auto h-full max-h-none rounded-none',
+          pseudoFullscreen && 'player-pseudo-fullscreen',
+          gestureActive && 'touch-none',
+          playing && !controlsVisible && 'cursor-none',
+        )}
+      >
       <div className="absolute inset-0 flex items-center justify-center overflow-hidden bg-[#212121]">
         <div
           ref={videoTransformRef}
@@ -2056,7 +2142,11 @@ export function VideoPlayer({
               setPlaybackError(null);
               pendingPlayRef.current = false;
             }}
-            onPause={() => setPlaying(false)}
+            onPause={() => {
+              setPlaying(false);
+              clearHideTimer();
+              setShowControls(true);
+            }}
             onCanPlay={() => {
               if (pendingPlayRef.current) {
                 void attemptPlay();
@@ -2183,6 +2273,16 @@ export function VideoPlayer({
         onTouchEnd={handlePinchTouchEnd}
         onTouchCancel={handlePinchTouchEnd}
         onPointerDown={handleGesturePointerDown}
+        onPointerMove={(e) => {
+          if (e.pointerType === 'mouse' || e.pointerType === 'pen') {
+            bumpControlsActivity();
+          }
+        }}
+        onMouseLeave={() => {
+          if (playing && showControls && !isScrubbingRef.current) {
+            scheduleHideControls();
+          }
+        }}
         onPointerCancel={() => {
           cleanupDocumentGesture();
           setGestureActive(false);
@@ -2413,9 +2513,15 @@ export function VideoPlayer({
                 <button
                   type="button"
                   onClick={() => {
-                    setShowQualityMenu((v) => !v);
-                    setShowControls(true);
-                    clearHideTimer();
+                    setShowQualityMenu((v) => {
+                      const next = !v;
+                      if (next) {
+                        revealControls({ scheduleHide: false });
+                      } else if (playing) {
+                        scheduleHideControls();
+                      }
+                      return next;
+                    });
                   }}
                   className="flex h-9 w-9 items-center justify-center rounded-full text-white active:bg-white/15"
                   aria-label="Quality"

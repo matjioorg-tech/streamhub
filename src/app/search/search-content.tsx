@@ -34,20 +34,20 @@ export function SearchContent() {
       />
 
       <form onSubmit={handleSearch} className="mb-5 sm:mb-6">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+        <div className="relative sm:max-w-xl">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-yt-text-tertiary" />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search videos, creators, topics..."
-            className="w-full rounded-xl border border-zinc-800 bg-zinc-950/80 py-3 pl-10 pr-4 text-sm text-white placeholder:text-zinc-500 focus:border-red-500/60 focus:outline-none sm:max-w-xl"
+            placeholder="Search videos, creators, topics…"
+            className="pro-input pl-9"
           />
         </div>
       </form>
 
       {searchTerm && !isLoading && (
-        <p className="mb-4 text-xs text-zinc-500 sm:text-sm">
+        <p className="mb-4 text-xs text-yt-text-tertiary sm:text-sm">
           {total === 0
             ? `No results for “${searchTerm}”`
             : `${total ?? results.length} result${(total ?? results.length) === 1 ? '' : 's'} for “${searchTerm}”`}
@@ -59,9 +59,11 @@ export function SearchContent() {
       ) : searchTerm ? (
         <VideoGrid videos={results} icon={Search} adminEditable />
       ) : (
-        <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 py-14 text-center">
-          <Search className="mx-auto h-8 w-8 text-zinc-600" />
-          <p className="mt-3 text-sm text-zinc-500">Search for videos, creators, or topics</p>
+        <div className="pro-empty">
+          <Search className="mx-auto h-8 w-8 text-yt-text-tertiary" />
+          <p className="mt-3 text-sm text-yt-text-secondary">
+            Search for videos, creators, or topics
+          </p>
         </div>
       )}
     </PageLayout>

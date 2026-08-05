@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { Video } from '@/lib/api/types';
 import { useCategories, useSubcategories } from '@/hooks/use-categories';
 import { useRegenerateVideoMetadata, useUpdateVideo } from '@/hooks/use-admin';
+import { useUpdateMyVideo } from '@/hooks/use-my-videos';
 import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 import { getSubCategoryLabel } from '@/lib/category-labels';
 import { cn } from '@/lib/utils';
@@ -11,6 +12,7 @@ import { X } from 'lucide-react';
 
 interface VideoEditModalProps {
   video: Video;
+  variant?: 'admin' | 'user';
   onClose: () => void;
   onSaved?: (video: Video) => void;
 }
@@ -22,10 +24,17 @@ function splitList(value: string): string[] {
     .filter(Boolean);
 }
 
-export function VideoEditModal({ video, onClose, onSaved }: VideoEditModalProps) {
+export function VideoEditModal({
+  video,
+  variant = 'admin',
+  onClose,
+  onSaved,
+}: VideoEditModalProps) {
   const { data: categories } = useCategories();
-  const updateVideo = useUpdateVideo();
+  const updateAdminVideo = useUpdateVideo();
+  const updateMyVideo = useUpdateMyVideo();
   const regenerateMetadata = useRegenerateVideoMetadata();
+  const updateVideo = variant === 'admin' ? updateAdminVideo : updateMyVideo;
   useLockBodyScroll(true);
 
   const [title, setTitle] = useState(video.title);
@@ -134,8 +143,14 @@ export function VideoEditModal({ video, onClose, onSaved }: VideoEditModalProps)
       >
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-800 px-4 py-4 sm:px-6">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-white">Edit video metadata</h2>
-            <p className="mt-1 text-sm text-zinc-400">Update title, description, and taxonomy fields.</p>
+            <h2 className="text-lg font-semibold text-white">
+              {variant === 'admin' ? 'Edit video metadata' : 'Edit your video'}
+            </h2>
+            <p className="mt-1 text-sm text-zinc-400">
+              {variant === 'admin'
+                ? 'Update title, description, and taxonomy fields.'
+                : 'Update how your video appears to viewers.'}
+            </p>
           </div>
           <button
             type="button"
@@ -325,16 +340,20 @@ export function VideoEditModal({ video, onClose, onSaved }: VideoEditModalProps)
         </div>
 
         <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void handleRegenerate()}
-              disabled={regenerating || saving}
-              className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
-            >
-              {regenerating ? 'Regenerating...' : 'Regenerate with AI'}
-            </button>
-          </div>
+          {variant === 'admin' ? (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleRegenerate()}
+                disabled={regenerating || saving}
+                className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
+              >
+                {regenerating ? 'Regenerating...' : 'Regenerate with AI'}
+              </button>
+            </div>
+          ) : (
+            <div />
+          )}
 
           <div className="flex gap-2">
             <button

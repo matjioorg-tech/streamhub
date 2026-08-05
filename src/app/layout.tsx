@@ -42,7 +42,7 @@ export default function RootLayout({
         <link rel="dns-prefetch" href={CDN_ORIGIN} />
         <link rel="preconnect" href={CDN_ORIGIN} crossOrigin="" />
       </head>
-      <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-100 antialiased">
+      <body className="min-h-full flex flex-col bg-yt-bg text-white antialiased">
         <QueryProvider>{children}</QueryProvider>
       </body>
     </html>

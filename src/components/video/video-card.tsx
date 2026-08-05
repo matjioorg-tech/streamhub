@@ -3,13 +3,21 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useQueryClient } from '@tanstack/react-query';
-import { Play } from 'lucide-react';
 import type { Video } from '@/lib/api/types';
-import { cn, formatDuration, formatUploadLabel, formatViews } from '@/lib/utils';
+import {
+  cn,
+  formatDuration,
+  formatRelativeTime,
+  formatViews,
+  getChannelInitial,
+  getChannelLabel,
+} from '@/lib/utils';
 import { prefetchVideoBySlug } from '@/lib/video-cache';
 import { markVideoAutoplayIntent } from '@/lib/video-autoplay';
 import { AdminVideoEditButton } from '@/components/admin/admin-video-edit-button';
+import { VideoOwnerActions } from '@/components/video/video-owner-actions';
 import { useIsAdmin } from '@/hooks/use-is-admin';
+import { useIsVideoOwner } from '@/hooks/use-is-video-owner';
 
 interface VideoCardProps {
   video: Video;
@@ -17,6 +25,7 @@ interface VideoCardProps {
   onVideoUpdated?: (video: Video) => void;
   badge?: string;
   compact?: boolean;
+  layout?: 'vertical' | 'horizontal';
 }
 
 export function VideoCard({
@@ -25,19 +34,118 @@ export function VideoCard({
   onVideoUpdated,
   badge,
   compact = false,
+  layout = 'vertical',
 }: VideoCardProps) {
   const isAdmin = useIsAdmin();
+  const isOwner = useIsVideoOwner(video);
   const queryClient = useQueryClient();
   const showAdminActions = adminEditable && isAdmin;
+  const showOwnerActions = isOwner && !showAdminActions;
+  const channel = getChannelLabel(video);
+  const channelInitial = getChannelInitial(channel);
 
   const prefetchWatch = () => prefetchVideoBySlug(queryClient, video.slug);
 
+  const thumbnail = (
+    <div
+      className={cn(
+        'relative shrink-0 overflow-hidden rounded-xl bg-yt-surface ring-1 ring-yt-border/60 transition duration-300 group-hover:ring-yt-border group-focus-within:ring-neutral-500',
+        layout === 'horizontal' ? 'aspect-video w-40 sm:w-56' : 'aspect-video w-full',
+      )}
+    >
+      {video.thumbnailUrl ? (
+        <Image
+          src={video.thumbnailUrl}
+          alt={video.title}
+          fill
+          unoptimized
+          className="object-cover transition duration-500 group-hover:scale-[1.03]"
+          sizes={
+            layout === 'horizontal'
+              ? '224px'
+              : '(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw'
+          }
+        />
+      ) : (
+        <div className="flex h-full items-center justify-center bg-yt-surface text-xs text-yt-text-tertiary">
+          No thumbnail
+        </div>
+      )}
+
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+
+      {badge && (
+        <span className="absolute left-2 top-2 rounded-md bg-black/75 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white backdrop-blur-sm">
+          {badge}
+        </span>
+      )}
+
+      {video.duration != null && video.duration > 0 && (
+        <span className="absolute bottom-2 right-2 rounded-md bg-black/85 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white backdrop-blur-sm">
+          {formatDuration(video.duration)}
+        </span>
+      )}
+    </div>
+  );
+
+  const metadata = (
+    <div className={cn('min-w-0 flex-1', layout === 'vertical' && 'mt-3')}>
+      <div className="flex gap-3">
+        {layout === 'vertical' && (
+          <div className="pro-avatar mt-0.5 h-9 w-9 shrink-0 text-xs" aria-hidden>
+            {channelInitial}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <h3
+            className={cn(
+              'line-clamp-2 font-medium leading-snug tracking-tight text-white transition-colors group-hover:text-neutral-100',
+              compact ? 'text-[13px]' : 'text-sm',
+            )}
+          >
+            {video.title}
+          </h3>
+          <p
+            className={cn(
+              'mt-1 truncate text-yt-text-secondary',
+              compact ? 'text-xs' : 'text-xs sm:text-[13px]',
+            )}
+          >
+            {channel}
+          </p>
+          <p
+            className={cn(
+              'truncate text-yt-text-tertiary',
+              compact ? 'text-[11px]' : 'text-xs sm:text-[13px]',
+            )}
+          >
+            {formatViews(video.views)} views · {formatRelativeTime(video.createdAt)}
+          </p>
+        </div>
+        {(showAdminActions || showOwnerActions) && (
+          <div className="shrink-0 self-start opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            {showAdminActions ? (
+              <AdminVideoEditButton
+                video={video}
+                iconOnly
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-yt-text-secondary hover:bg-yt-hover hover:text-white"
+                onUpdated={onVideoUpdated}
+              />
+            ) : (
+              <VideoOwnerActions video={video} compact onUpdated={onVideoUpdated} />
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="group relative">
+    <article className="group relative">
       <Link
         href={`/watch/${video.slug}`}
         prefetch
-        className="block"
+        className={cn('block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-white/20', layout === 'horizontal' && 'flex gap-3')}
         onPointerDown={() => {
           markVideoAutoplayIntent(video.slug);
           prefetchWatch();
@@ -46,72 +154,9 @@ export function VideoCard({
         onFocus={prefetchWatch}
         onTouchStart={prefetchWatch}
       >
-        <div
-          className={cn(
-            'relative aspect-video overflow-hidden rounded-xl bg-zinc-800 ring-1 ring-zinc-800 transition-all',
-            'group-hover:ring-red-500/30 group-active:scale-[0.99]',
-          )}
-        >
-          {video.thumbnailUrl ? (
-            <Image
-              src={video.thumbnailUrl}
-              alt={video.title}
-              fill
-              unoptimized
-              className="object-cover transition-transform duration-300 group-hover:scale-[1.04]"
-              sizes="(max-width: 640px) 72vw, (max-width: 1024px) 50vw, 25vw"
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-              No thumbnail
-            </div>
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-80 transition-opacity group-hover:opacity-100" />
-
-          {badge && (
-            <span className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-200 backdrop-blur-sm">
-              {badge}
-            </span>
-          )}
-
-          <div className="absolute inset-0 flex items-center justify-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-600/95 text-white shadow-lg sm:h-11 sm:w-11">
-              <Play className="ml-0.5 h-4 w-4 fill-current" />
-            </div>
-          </div>
-
-          {video.duration != null && video.duration > 0 && (
-            <span className="absolute bottom-2 right-2 rounded-md bg-black/80 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white backdrop-blur-sm">
-              {formatDuration(video.duration)}
-            </span>
-          )}
-        </div>
-        <div className={cn('mt-2.5 space-y-1 px-0.5', compact && 'mt-2')}>
-          <h3
-            className={cn(
-              'line-clamp-2 font-semibold leading-snug text-white transition-colors group-hover:text-red-400',
-              compact ? 'text-[13px]' : 'text-sm sm:text-[15px]',
-            )}
-          >
-            {video.title}
-          </h3>
-          <p className={cn('text-zinc-500', compact ? 'text-[11px]' : 'text-xs sm:text-sm')}>
-            {formatViews(video.views)} views
-            {' · '}
-            {formatUploadLabel(video.createdAt)}
-          </p>
-        </div>
+        {thumbnail}
+        {metadata}
       </Link>
-
-      {showAdminActions && (
-        <div className="absolute right-2 top-2 z-10">
-          <AdminVideoEditButton
-            video={video}
-            className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-zinc-700/80 bg-black/75 px-3 py-2 text-xs font-medium text-white backdrop-blur-sm hover:border-red-500/50"
-            onUpdated={onVideoUpdated}
-          />
-        </div>
-      )}
-    </div>
+    </article>
   );
 }

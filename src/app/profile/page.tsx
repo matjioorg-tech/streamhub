@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Heart, History, User, MessageCircle, Copy, Check } from 'lucide-react';
+import { Heart, History, User, MessageCircle, Copy, Check, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { PageLayout } from '@/components/layout/page-layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -10,6 +10,13 @@ import { getStoredUser, storeUser } from '@/lib/auth/session';
 import { cn } from '@/lib/utils';
 
 const links = [
+  {
+    href: '/profile/videos',
+    label: 'My Videos',
+    description: 'Edit, delete, and manage your uploads',
+    icon: Upload,
+    accent: 'bg-red-500/15 text-red-400 ring-red-500/20',
+  },
   {
     href: '/history',
     label: 'Watch History',
@@ -146,29 +153,26 @@ export default function ProfilePage() {
 
       <form
         onSubmit={handleSave}
-        className="mb-6 rounded-2xl border border-zinc-800/80 bg-zinc-950/50 p-4 sm:p-5"
+        className="pro-card mb-6 p-4 sm:p-5"
       >
         <div className="mb-4 flex items-center gap-2">
-          <MessageCircle className="h-5 w-5 text-red-400" />
+          <MessageCircle className="h-5 w-5 text-accent" />
           <h2 className="font-medium text-white">Account settings</h2>
         </div>
         {storedUser && (
-          <p className="mb-4 text-sm text-zinc-500">{storedUser.email}</p>
+          <p className="mb-4 text-sm text-yt-text-tertiary">{storedUser.email}</p>
         )}
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm text-zinc-400">Display name</label>
+            <label className="mb-1.5 block text-sm text-yt-text-secondary">Display name</label>
             <input
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
-              className={cn(
-                'w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white',
-                'focus:border-red-500 focus:outline-none',
-              )}
+              className="pro-input"
             />
           </div>
 
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+          <div className="rounded-xl border border-yt-border bg-yt-surface-raised/50 p-4">
             <div className="mb-2 flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-white">Telegram upload bot</p>
               <span
@@ -182,20 +186,20 @@ export default function ProfilePage() {
                 {telegramLinked ? 'Linked' : 'Not linked'}
               </span>
             </div>
-            <p className="mb-3 text-xs text-zinc-500">
+            <p className="mb-3 text-xs text-yt-text-tertiary">
               Generate a one-time code here, then paste it in the Telegram upload bot
               to link this account.
             </p>
 
             {linkCode && (
               <div className="mb-3 flex items-center gap-2">
-                <code className="flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-sm text-white">
+                <code className="flex-1 rounded-lg border border-yt-border-input bg-yt-bg px-3 py-2 font-mono text-sm text-white">
                   {linkCode}
                 </code>
                 <button
                   type="button"
                   onClick={handleCopyCode}
-                  className="rounded-lg border border-zinc-700 px-3 py-2 text-zinc-300 hover:bg-zinc-800"
+                  className="pro-btn pro-btn-secondary px-3 py-2"
                   aria-label="Copy link code"
                 >
                   {copied ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
@@ -204,7 +208,7 @@ export default function ProfilePage() {
             )}
 
             {linkCodeExpiresAt && !telegramLinked && (
-              <p className="mb-3 text-xs text-zinc-500">
+              <p className="mb-3 text-xs text-yt-text-tertiary">
                 Code expires {new Date(linkCodeExpiresAt).toLocaleString()}
               </p>
             )}
@@ -214,7 +218,7 @@ export default function ProfilePage() {
                 type="button"
                 onClick={handleGenerateCode}
                 disabled={generatingCode}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                className="pro-btn pro-btn-primary"
               >
                 {generatingCode ? 'Generating...' : linkCode ? 'Generate new code' : 'Generate link code'}
               </button>
@@ -223,7 +227,7 @@ export default function ProfilePage() {
                   type="button"
                   onClick={handleUnlink}
                   disabled={unlinking}
-                  className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+                  className="pro-btn pro-btn-secondary"
                 >
                   {unlinking ? 'Unlinking...' : 'Unlink Telegram'}
                 </button>
@@ -236,19 +240,19 @@ export default function ProfilePage() {
           <button
             type="submit"
             disabled={saving}
-            className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+            className="pro-btn pro-btn-secondary"
           >
             {saving ? 'Saving...' : 'Save display name'}
           </button>
         </div>
       </form>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {links.map(({ href, label, description, icon: Icon, accent }) => (
           <Link
             key={href}
             href={href}
-            className="group flex items-start gap-3 rounded-2xl border border-zinc-800/80 bg-zinc-950/50 p-4 transition active:scale-[0.99] hover:border-zinc-700 hover:bg-zinc-900/50"
+            className="pro-card group flex items-start gap-3 p-4 transition hover:bg-yt-hover/40"
           >
             <span
               className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${accent}`}
@@ -256,8 +260,8 @@ export default function ProfilePage() {
               <Icon className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <p className="font-medium text-white group-hover:text-red-300">{label}</p>
-              <p className="mt-0.5 text-xs text-zinc-500 sm:text-sm">{description}</p>
+              <p className="font-medium text-white group-hover:text-neutral-100">{label}</p>
+              <p className="mt-0.5 text-xs text-yt-text-tertiary sm:text-sm">{description}</p>
             </div>
           </Link>
         ))}

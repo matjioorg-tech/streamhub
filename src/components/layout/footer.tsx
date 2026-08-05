@@ -4,11 +4,11 @@ export function Footer({ compact = false }: { compact?: boolean }) {
   return (
     <footer
       className={cn(
-        'mt-auto border-t border-zinc-800 bg-zinc-950',
-        compact ? 'py-4 md:py-8' : 'py-8',
+        'mt-auto border-t border-yt-border/80 bg-yt-bg',
+        compact ? 'py-4 md:py-6' : 'py-8',
       )}
     >
-      <div className="mx-auto max-w-7xl px-4 text-center text-sm text-zinc-500">
+      <div className="mx-auto max-w-7xl px-4 text-center text-sm text-yt-text-tertiary">
         <p>&copy; {new Date().getFullYear()} StreamHub. All rights reserved.</p>
       </div>
     </footer>

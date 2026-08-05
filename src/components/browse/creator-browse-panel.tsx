@@ -81,7 +81,7 @@ export function CreatorSidebar({
               type="search"
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search…"
+              placeholder={`Search ${creatorLabel.toLowerCase()}s…`}
               className="w-full rounded-md border border-zinc-800 bg-zinc-900 py-1.5 pl-8 pr-2 text-xs text-white placeholder:text-zinc-500 focus:border-red-500/50 focus:outline-none"
             />
           </div>

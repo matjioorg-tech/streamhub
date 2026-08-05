@@ -9,12 +9,14 @@ import { Pencil } from 'lucide-react';
 interface AdminVideoEditButtonProps {
   video: Video;
   className?: string;
+  iconOnly?: boolean;
   onUpdated?: (video: Video) => void;
 }
 
 export function AdminVideoEditButton({
   video,
   className,
+  iconOnly = false,
   onUpdated,
 }: AdminVideoEditButtonProps) {
   const isAdmin = useIsAdmin();
@@ -40,7 +42,7 @@ export function AdminVideoEditButton({
         aria-label={`Edit ${video.title}`}
       >
         <Pencil className="h-3.5 w-3.5" />
-        Edit
+        {!iconOnly && 'Edit'}
       </button>
 
       {open && (

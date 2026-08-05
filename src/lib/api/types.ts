@@ -29,6 +29,7 @@ export interface VideoQualityOption {
 export interface Video {
   id: string;
   uuid: string;
+  userId?: string;
   title: string;
   slug: string;
   description: string | null;
@@ -55,6 +56,12 @@ export interface Video {
   keywords: string[] | null;
   category?: Category | null;
   videoTags?: { tag: Tag }[];
+  latestUploadTask?: {
+    id: string;
+    status: string;
+    progress: number;
+    error: string | null;
+  } | null;
 }
 
 export interface NearbyVideos {

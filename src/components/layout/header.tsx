@@ -1,75 +1,102 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Search, User, LayoutDashboard } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState, FormEvent } from 'react';
+import { Menu, Search, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-const navLinks = [
-  { href: '/trending', label: 'Trending' },
-  { href: '/latest', label: 'Latest' },
-  { href: '/categories', label: 'Categories' },
-];
+import { useSidebar } from './sidebar-context';
+import { getStoredUser } from '@/lib/auth/session';
 
 export function Header() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { toggle } = useSidebar();
+  const [query, setQuery] = useState('');
+  const user = getStoredUser();
   const isWatchPage = pathname.startsWith('/watch/');
+
+  const handleSearch = (e: FormEvent) => {
+    e.preventDefault();
+    const q = query.trim();
+    if (q) {
+      router.push(`/search?q=${encodeURIComponent(q)}`);
+    } else {
+      router.push('/search');
+    }
+  };
 
   return (
     <header
       className={cn(
-        'sticky top-0 z-50 border-b border-zinc-800 bg-zinc-950/90 pt-[env(safe-area-inset-top)] backdrop-blur',
-        isWatchPage && 'border-b-zinc-800/80',
+        'fixed inset-x-0 top-0 z-[60] flex h-14 items-center gap-2 border-b border-yt-border/80 bg-yt-bg/90 px-2 pt-[env(safe-area-inset-top)] shadow-[0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl sm:gap-4 sm:px-4',
+        isWatchPage && 'bg-yt-bg/95',
       )}
     >
-      <div
-        className={cn(
-          'mx-auto flex max-w-7xl items-center gap-4 px-4 sm:gap-6',
-          isWatchPage ? 'h-12 md:h-14' : 'h-14',
-        )}
-      >
-        <Link href="/" className="shrink-0 text-lg font-bold tracking-tight text-red-500">
-          StreamHub
+      <div className="flex min-w-0 shrink-0 items-center gap-1 sm:gap-2">
+        <button
+          type="button"
+          onClick={toggle}
+          className="flex h-10 w-10 items-center justify-center rounded-full text-white transition-colors hover:bg-yt-hover"
+          aria-label="Toggle menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+
+        <Link href="/" className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-rose-700 shadow-sm">
+            <svg viewBox="0 0 24 24" className="ml-0.5 h-4 w-4 fill-white" aria-hidden>
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </span>
+          <span className="hidden truncate text-[17px] font-semibold tracking-tight text-white sm:inline">
+            StreamHub
+          </span>
         </Link>
-        <nav className="hidden items-center gap-1 md:flex">
-          {navLinks.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                'rounded-lg px-3 py-1.5 text-sm transition-colors',
-                pathname === href
-                  ? 'bg-zinc-800 text-white'
-                  : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-white',
-              )}
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
-        <div className="ml-auto flex items-center gap-1 sm:gap-2">
-          <Link
-            href="/search"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+      </div>
+
+      <form
+        onSubmit={handleSearch}
+        className="mx-auto hidden min-w-0 max-w-[680px] flex-1 items-center sm:flex"
+      >
+        <div className="flex w-full items-center overflow-hidden rounded-full border border-yt-border-input bg-yt-surface shadow-inner transition-colors focus-within:border-neutral-500 focus-within:ring-2 focus-within:ring-white/5">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search videos, creators, topics…"
+            className="h-10 min-w-0 flex-1 border-0 bg-transparent px-4 text-sm text-white placeholder:text-yt-text-tertiary focus:outline-none"
+          />
+          <button
+            type="submit"
+            className="flex h-10 w-14 shrink-0 items-center justify-center border-l border-yt-border-input bg-yt-hover text-yt-text-secondary transition-colors hover:bg-yt-border hover:text-white"
             aria-label="Search"
           >
-            <Search className="h-5 w-5" />
-          </Link>
-          <Link
-            href="/admin/login"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
-            aria-label="Admin"
-          >
-            <LayoutDashboard className="h-5 w-5" />
-          </Link>
-          <Link
-            href="/profile"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
-            aria-label="Profile"
-          >
-            <User className="h-5 w-5" />
-          </Link>
+            <Search className="h-[18px] w-[18px]" />
+          </button>
         </div>
+      </form>
+
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        <Link
+          href="/search"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-white transition-colors hover:bg-yt-hover sm:hidden"
+          aria-label="Search"
+        >
+          <Search className="h-5 w-5" />
+        </Link>
+
+        <Link
+          href="/profile"
+          className="pro-avatar flex h-9 w-9 text-xs ring-1 ring-yt-border transition hover:ring-neutral-500"
+          aria-label="Profile"
+        >
+          {user?.displayName ? (
+            <span className="uppercase">{user.displayName.slice(0, 1)}</span>
+          ) : (
+            <User className="h-4 w-4 text-yt-text-secondary" />
+          )}
+        </Link>
       </div>
     </header>
   );

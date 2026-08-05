@@ -54,9 +54,17 @@ export function useNearbyVideos(slug: string, limit = 8) {
 }
 
 export function useSearchVideos(params: VideoQueryParams) {
+  const term = params.search?.trim();
   return useQuery({
     queryKey: ['search', params],
-    queryFn: () => videosApi.search(params),
-    enabled: !!(params.search || params.category || params.subCategory),
+    queryFn: () => videosApi.search({ ...params, search: term }),
+    enabled: !!(term || params.category || params.subCategory),
+  });
+}
+
+export function useMyVideos(params?: VideoQueryParams) {
+  return useQuery({
+    queryKey: ['my-videos', params],
+    queryFn: () => videosApi.listMine(params),
   });
 }

@@ -8,63 +8,72 @@ interface VideoSuggestionsProps {
   before: Video[];
   after: Video[];
   className?: string;
+  variant?: 'grid' | 'sidebar';
 }
 
-function SuggestionRow({
+function SuggestionList({
   title,
-  subtitle,
-  label,
   videos,
+  variant,
 }: {
   title: string;
-  subtitle: string;
-  label: string;
   videos: Video[];
+  variant: 'grid' | 'sidebar';
 }) {
   if (videos.length === 0) return null;
 
+  if (variant === 'sidebar') {
+    return (
+      <section className="space-y-3">
+        <h3 className="text-sm font-medium text-yt-text-secondary">{title}</h3>
+        <div className="space-y-3">
+          {videos.map((video) => (
+            <VideoCard key={video.id} video={video} layout="horizontal" compact />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section>
-      <div className="mb-3 flex items-end justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-red-400/90">
-            {label}
-          </p>
-          <h2 className="mt-0.5 text-base font-semibold text-white sm:text-lg">{title}</h2>
-          <p className="mt-0.5 text-xs text-zinc-500 sm:text-sm">{subtitle}</p>
-        </div>
-      </div>
-      <div className="-mx-3 flex gap-3 overflow-x-auto px-3 pb-1 snap-x snap-mandatory scrollbar-none sm:-mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4">
+      <h2 className="mb-4 text-lg font-medium text-white">{title}</h2>
+      <div className="grid grid-cols-1 gap-x-4 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {videos.map((video) => (
-          <div
-            key={video.id}
-            className="w-[72vw] shrink-0 snap-start sm:w-auto sm:shrink"
-          >
-            <VideoCard video={video} badge={label} compact />
-          </div>
+          <VideoCard key={video.id} video={video} compact />
         ))}
       </div>
     </section>
   );
 }
 
-export function VideoSuggestions({ before, after, className }: VideoSuggestionsProps) {
+export function VideoSuggestions({
+  before,
+  after,
+  className,
+  variant = 'grid',
+}: VideoSuggestionsProps) {
   if (before.length === 0 && after.length === 0) return null;
 
+  const combined = [...before, ...after];
+
+  if (variant === 'sidebar') {
+    return (
+      <div className={cn('space-y-6', className)}>
+        <h2 className="text-base font-medium text-white">Up next</h2>
+        <div className="space-y-3">
+          {combined.map((video) => (
+            <VideoCard key={video.id} video={video} layout="horizontal" compact />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={cn('space-y-8 border-t border-zinc-800/80 pt-6 sm:space-y-10 sm:pt-8', className)}>
-      <SuggestionRow
-        label="Earlier"
-        title="Uploaded before this video"
-        subtitle="Older uploads in your library"
-        videos={before}
-      />
-      <SuggestionRow
-        label="Later"
-        title="Uploaded after this video"
-        subtitle="Newer uploads in your library"
-        videos={after}
-      />
+    <div className={cn('space-y-8 border-t border-yt-border pt-8', className)}>
+      <SuggestionList title="Uploaded before" videos={before} variant={variant} />
+      <SuggestionList title="Uploaded after" videos={after} variant={variant} />
     </div>
   );
 }
