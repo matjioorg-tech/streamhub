@@ -34,6 +34,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
       <head>
+        <script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6202226619421770"
+          crossOrigin="anonymous"
+        />
         <link rel="dns-prefetch" href={CDN_ORIGIN} />
         <link rel="preconnect" href={CDN_ORIGIN} crossOrigin="" />
       </head>
