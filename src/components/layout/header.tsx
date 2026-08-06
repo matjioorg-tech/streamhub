@@ -11,7 +11,7 @@ import { getStoredUser } from '@/lib/auth/session';
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { toggle } = useSidebar();
+  const { toggle, open } = useSidebar();
   const [query, setQuery] = useState('');
   const user = getStoredUser();
   const isWatchPage = pathname.startsWith('/watch/');
@@ -37,8 +37,9 @@ export function Header() {
         <button
           type="button"
           onClick={toggle}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-white transition-colors hover:bg-yt-hover"
-          aria-label="Toggle menu"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-white transition-colors hover:bg-yt-hover active:scale-95 lg:hidden"
+          aria-label="Open menu"
+          aria-expanded={open}
         >
           <Menu className="h-5 w-5" />
         </button>

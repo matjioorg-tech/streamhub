@@ -28,3 +28,20 @@ export const CATEGORY_ACCENTS: Record<string, string> = {
   Entertainment: 'from-red-600/20 to-orange-600/10',
   Kids: 'from-lime-600/20 to-yellow-600/10',
 };
+
+export const CATEGORY_ICONS: Record<string, string> = {
+  Education: '📚',
+  Course: '💻',
+  'Movies & Series': '🎬',
+  Gaming: '🎮',
+  'Music & Podcast': '🎧',
+  'Business & Finance': '💼',
+  'News & Sports': '📰',
+  Lifestyle: '✨',
+  Entertainment: '🎭',
+  Kids: '🧸',
+};
+
+export function getCategoryIcon(name: string): string {
+  return CATEGORY_ICONS[name] ?? '📁';
+}

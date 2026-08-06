@@ -54,9 +54,10 @@ function NavItem({
   );
 }
 
+/** Desktop sidebar only — mobile uses `MobileMenuDrawer`. */
 export function Sidebar() {
   const pathname = usePathname();
-  const { open, setOpen } = useSidebar();
+  const { open } = useSidebar();
   const collapsed = !open;
   const isWatchPage = pathname.startsWith('/watch/');
 
@@ -68,62 +69,49 @@ export function Sidebar() {
     pathname === href || (href !== '/' && pathname.startsWith(href));
 
   return (
-    <>
-      {open && (
-        <button
-          type="button"
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] lg:hidden"
-          onClick={() => setOpen(false)}
-          aria-label="Close menu"
-        />
+    <aside
+      className={cn(
+        'hidden shrink-0 flex-col overflow-hidden border-r border-yt-border/80 bg-yt-bg transition-[width] duration-200 ease-out lg:flex',
+        open ? 'w-[240px]' : 'w-[72px]',
       )}
-
-      <aside
-        className={cn(
-          'z-50 flex shrink-0 flex-col overflow-hidden border-r border-yt-border/80 bg-yt-bg transition-[width,transform] duration-200 ease-out',
-          'fixed left-0 top-0 h-full pt-[calc(3.5rem+env(safe-area-inset-top))]',
-          'lg:relative lg:top-auto lg:z-30 lg:h-auto lg:min-h-[calc(100vh-3.5rem)] lg:translate-x-0 lg:pt-0',
-          open ? 'w-[240px] translate-x-0' : 'w-0 -translate-x-full lg:w-[72px] lg:translate-x-0',
-        )}
-      >
-        <nav className="flex h-full w-[240px] flex-col overflow-y-auto overflow-x-hidden px-2.5 py-3 scrollbar-none lg:w-full">
-          <div className="space-y-0.5">
-            {mainLinks.map((link) => (
-              <NavItem
-                key={link.href}
-                {...link}
-                active={isActive(link.href)}
-                collapsed={collapsed}
-              />
-            ))}
-          </div>
-
-          {!collapsed && (
-            <p className="mb-1.5 mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-yt-text-tertiary">
-              Library
-            </p>
-          )}
-          {collapsed && <div className="my-3 border-t border-yt-border/80" />}
-
-          <div className="space-y-0.5">
-            {libraryLinks.map((link) => (
-              <NavItem
-                key={link.href}
-                {...link}
-                active={isActive(link.href)}
-                collapsed={collapsed}
-              />
-            ))}
+    >
+      <nav className="flex h-full min-h-[calc(100vh-3.5rem)] w-full flex-col overflow-y-auto overflow-x-hidden px-2.5 py-3 scrollbar-none">
+        <div className="space-y-0.5">
+          {mainLinks.map((link) => (
             <NavItem
-              href="/profile"
-              label="Profile"
-              icon={User}
-              active={pathname === '/profile'}
+              key={link.href}
+              {...link}
+              active={isActive(link.href)}
               collapsed={collapsed}
             />
-          </div>
-        </nav>
-      </aside>
-    </>
+          ))}
+        </div>
+
+        {!collapsed && (
+          <p className="mb-1.5 mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-yt-text-tertiary">
+            Library
+          </p>
+        )}
+        {collapsed && <div className="my-3 border-t border-yt-border/80" />}
+
+        <div className="space-y-0.5">
+          {libraryLinks.map((link) => (
+            <NavItem
+              key={link.href}
+              {...link}
+              active={isActive(link.href)}
+              collapsed={collapsed}
+            />
+          ))}
+          <NavItem
+            href="/profile"
+            label="Profile"
+            icon={User}
+            active={pathname === '/profile'}
+            collapsed={collapsed}
+          />
+        </div>
+      </nav>
+    </aside>
   );
 }

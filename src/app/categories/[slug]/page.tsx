@@ -156,26 +156,27 @@ function CategoryDetailContent() {
 
   return (
     <PageLayout>
-      <div className="mb-6 flex items-start gap-3 sm:mb-8">
+      <div className="mb-5 flex items-start gap-3 sm:mb-6">
         <Link
           href="/categories"
           className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-zinc-900 hover:text-white"
-          aria-label="Back to categories"
+          aria-label="Back to topics"
         >
           <ChevronLeft className="h-5 w-5" />
         </Link>
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">
-            {categoryLoading ? 'Loading…' : category?.name ?? 'Category'}
+          <p className="text-xs font-medium uppercase tracking-wide text-yt-text-tertiary">
+            Topic
+          </p>
+          <h1 className="truncate text-xl font-semibold tracking-tight text-white sm:text-2xl">
+            {categoryLoading ? 'Loading…' : category?.name ?? 'Topic'}
           </h1>
           {selectedSub ? (
-            <p className="mt-1 text-sm text-zinc-400">
+            <p className="mt-1 truncate text-sm text-zinc-400">
               {creatorLabel}: <span className="text-zinc-200">{selectedSub}</span>
             </p>
           ) : (
-            <p className="mt-1 text-sm text-zinc-500">
-              All videos in this category
-            </p>
+            <p className="mt-1 text-sm text-zinc-500">Videos in this topic only</p>
           )}
         </div>
       </div>
@@ -215,11 +216,16 @@ function CategoryDetailContent() {
             }
           />
 
-          <div className="mt-6">
+          <div className="mt-5">
             {videosLoading ? (
-              <VideoGridSkeleton title="Videos" />
+              <VideoGridSkeleton title={selectedSub ? `${selectedSub}` : 'Videos in this topic'} />
             ) : (
               <>
+                {!videosLoading && videoList.length > 0 && (
+                  <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-yt-text-tertiary">
+                    {selectedSub ? `${creatorLabel}: ${selectedSub}` : 'Videos in this topic'}
+                  </h2>
+                )}
                 <VideoGrid videos={videoList} />
                 {meta && meta.totalPages > 1 && (
                   <Pagination meta={meta} onPageChange={handlePageChange} className="mt-8" />

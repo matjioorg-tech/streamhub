@@ -5,6 +5,7 @@ import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { MobileNav } from '@/components/layout/mobile-nav';
 import { Sidebar } from '@/components/layout/sidebar';
+import { MobileMenuDrawer } from '@/components/layout/mobile-menu-drawer';
 import { SidebarProvider } from '@/components/layout/sidebar-context';
 import { AppGuard } from '@/components/auth/app-guard';
 import { cn } from '@/lib/utils';
@@ -27,6 +28,7 @@ function PageLayoutInner({
   return (
     <div className="flex min-h-screen flex-col bg-yt-bg">
       <Header />
+      <MobileMenuDrawer />
       <div className="flex flex-1 pt-14">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
@@ -36,7 +38,7 @@ function PageLayoutInner({
               isWatchPage
                 ? 'max-w-[1754px] px-0 py-0 pb-4 lg:px-6 lg:py-4'
                 : showMobileNav
-                  ? 'px-4 py-4 pb-20 lg:px-6 lg:pb-6'
+                  ? 'px-4 py-4 pb-28 lg:px-6 lg:pb-6'
                   : 'px-4 py-4 lg:px-6',
               className,
             )}
