@@ -28,14 +28,14 @@ export function CategoryFilterBar({
   return (
     <div
       className={cn(
-        'sticky top-[3.5rem] z-20 -mx-4 mb-5 border-b border-yt-border/80 bg-yt-bg/90 px-4 py-3 backdrop-blur-xl sm:static sm:mx-0 sm:rounded-xl sm:border sm:bg-yt-surface/50 sm:px-4',
+        'mb-6 rounded-xl border border-yt-border/70 bg-yt-surface/40 px-4 py-4 sm:static sm:mb-0 sm:bg-yt-surface/30',
         className,
       )}
     >
-      <div className="flex flex-wrap items-center gap-2.5">
-        {creatorSlot ? <div className="min-w-[140px] flex-1 lg:hidden">{creatorSlot}</div> : null}
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        {creatorSlot ? <div className="min-w-0 sm:max-w-xs">{creatorSlot}</div> : null}
 
-        <label className="relative min-w-[140px] flex-1 sm:max-w-xs">
+        <label className="relative min-w-0 flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-yt-text-tertiary" />
           <input
             type="search"
@@ -61,7 +61,7 @@ export function CategoryFilterBar({
       </div>
 
       {typeof total === 'number' && !isLoading && (
-        <p className="mt-2 text-xs text-yt-text-tertiary">
+        <p className="mt-3 text-sm text-yt-text-tertiary">
           {total === 0 ? 'No videos' : `${total.toLocaleString()} video${total === 1 ? '' : 's'}`}
         </p>
       )}

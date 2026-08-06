@@ -154,31 +154,33 @@ function CategoryDetailContent() {
     );
   };
 
-  const listTitle = selectedSub ?? category?.name ?? 'Videos';
-
   return (
     <PageLayout>
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-6 flex items-start gap-3 sm:mb-8">
         <Link
           href="/categories"
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-900 hover:text-white"
+          className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-zinc-900 hover:text-white"
           aria-label="Back to categories"
         >
           <ChevronLeft className="h-5 w-5" />
         </Link>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-semibold text-white sm:text-lg">
+          <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">
             {categoryLoading ? 'Loading…' : category?.name ?? 'Category'}
           </h1>
           {selectedSub ? (
-            <p className="truncate text-xs text-zinc-500">
-              {creatorLabel}: <span className="text-zinc-300">{selectedSub}</span>
+            <p className="mt-1 text-sm text-zinc-400">
+              {creatorLabel}: <span className="text-zinc-200">{selectedSub}</span>
             </p>
-          ) : null}
+          ) : (
+            <p className="mt-1 text-sm text-zinc-500">
+              All videos in this category
+            </p>
+          )}
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
         {hasCreators && (
           <CreatorSidebar
             creatorLabel={creatorLabel}
@@ -192,7 +194,7 @@ function CategoryDetailContent() {
           />
         )}
 
-        <div ref={videosRef} className="min-w-0 flex-1 scroll-mt-28">
+        <div ref={videosRef} className="min-w-0 flex-1 scroll-mt-24">
           <CategoryFilterBar
             sort={sort}
             onSortChange={handleSortChange}
@@ -213,16 +215,18 @@ function CategoryDetailContent() {
             }
           />
 
-          {videosLoading ? (
-            <VideoGridSkeleton title={listTitle} />
-          ) : (
-            <>
-              <VideoGrid videos={videoList} />
-              {meta && meta.totalPages > 1 && (
-                <Pagination meta={meta} onPageChange={handlePageChange} className="mt-6" />
-              )}
-            </>
-          )}
+          <div className="mt-6">
+            {videosLoading ? (
+              <VideoGridSkeleton title="Videos" />
+            ) : (
+              <>
+                <VideoGrid videos={videoList} />
+                {meta && meta.totalPages > 1 && (
+                  <Pagination meta={meta} onPageChange={handlePageChange} className="mt-8" />
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
     </PageLayout>

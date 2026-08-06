@@ -43,7 +43,7 @@ export function Header() {
           <Menu className="h-5 w-5" />
         </button>
 
-        <Link href="/" className="flex min-w-0 items-center gap-2.5">
+        <Link href="/categories" className="flex min-w-0 items-center gap-2.5">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-rose-700 shadow-sm">
             <svg viewBox="0 0 24 24" className="ml-0.5 h-4 w-4 fill-white" aria-hidden>
               <path d="M8 5v14l11-7z" />

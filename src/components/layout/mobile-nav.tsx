@@ -2,15 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Clock, Flame, Home, Library, Search } from 'lucide-react';
+import { Grid3X3, Heart, Search, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const links = [
-  { href: '/', label: 'Home', icon: Home },
-  { href: '/trending', label: 'Trending', icon: Flame },
-  { href: '/latest', label: 'Latest', icon: Clock },
+  { href: '/categories', label: 'Browse', icon: Grid3X3 },
   { href: '/search', label: 'Search', icon: Search },
-  { href: '/profile', label: 'You', icon: Library },
+  { href: '/favorites', label: 'Saved', icon: Heart },
+  { href: '/profile', label: 'You', icon: User },
 ];
 
 export function MobileNav() {
@@ -22,6 +21,7 @@ export function MobileNav() {
         {links.map(({ href, label, icon: Icon }) => {
           const active =
             pathname === href ||
+            (href === '/favorites' && pathname.startsWith('/favorites')) ||
             (href === '/profile' && pathname.startsWith('/profile')) ||
             (href !== '/' && href !== '/profile' && pathname.startsWith(href));
           return (

@@ -69,9 +69,9 @@ export function CreatorSidebar({
   onSelect,
 }: CreatorSidebarProps) {
   return (
-    <aside className="hidden w-52 shrink-0 lg:block xl:w-56">
-      <div className="sticky top-[4.5rem] rounded-lg border border-zinc-800/80 bg-zinc-950/60">
-        <div className="border-b border-zinc-800/80 px-3 py-2.5">
+    <aside className="hidden w-56 shrink-0 lg:block xl:w-60">
+      <div className="sticky top-20 rounded-xl border border-zinc-800/80 bg-zinc-950/50">
+        <div className="border-b border-zinc-800/80 px-4 py-3.5">
           <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
             {creatorLabel}s
           </p>
@@ -86,7 +86,7 @@ export function CreatorSidebar({
             />
           </div>
         </div>
-        <nav className="max-h-[50vh] overflow-y-auto p-1.5">
+        <nav className="max-h-[min(60vh,28rem)] overflow-y-auto p-2">
           <Link
             href={buildHref()}
             onClick={() => onSelect(undefined)}

@@ -2,25 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  Clock,
-  Flame,
-  Grid3X3,
-  Heart,
-  History,
-  Home,
-  Upload,
-  User,
-} from 'lucide-react';
+import { Grid3X3, Heart, History, Upload, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSidebar } from './sidebar-context';
 
-const mainLinks = [
-  { href: '/', label: 'Home', icon: Home },
-  { href: '/trending', label: 'Trending', icon: Flame },
-  { href: '/latest', label: 'Latest', icon: Clock },
-  { href: '/categories', label: 'Explore', icon: Grid3X3 },
-];
+const mainLinks = [{ href: '/categories', label: 'Browse', icon: Grid3X3 }];
 
 const libraryLinks = [
   { href: '/history', label: 'History', icon: History },

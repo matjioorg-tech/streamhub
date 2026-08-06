@@ -2,14 +2,12 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { Search, ChevronRight, Film } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { PageLayout } from '@/components/layout/page-layout';
-import { PageHeader } from '@/components/layout/page-header';
+import { CategoryCard, CategoryCardSkeleton } from '@/components/browse/category-card';
 import { VideoGrid, VideoGridSkeleton } from '@/components/video/video-grid';
 import { useCategories } from '@/hooks/use-categories';
 import { useSearchVideos } from '@/hooks/use-videos';
-import { getSubCategoryLabel } from '@/lib/category-labels';
-import { cn } from '@/lib/utils';
 
 export default function CategoriesPage() {
   const { data: categories, isLoading: categoriesLoading } = useCategories();
@@ -43,33 +41,32 @@ export default function CategoriesPage() {
 
   return (
     <PageLayout>
-      <PageHeader
-        icon={Film}
-        title="Browse"
-        subtitle="Explore categories or search videos by title"
-        accent="emerald"
-      />
+      <header className="mb-8 sm:mb-10">
+        <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+          Your library
+        </h1>
+        <p className="mt-2 max-w-xl text-sm leading-relaxed text-yt-text-secondary sm:text-base">
+          Browse by category. Every video belongs to one of the sections below.
+        </p>
+      </header>
 
-      <div className="relative mb-5 sm:max-w-xl">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-yt-text-tertiary" />
+      <div className="relative mb-8 sm:max-w-lg">
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-yt-text-tertiary" />
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search categories or video titles…"
-          className="pro-input pl-9"
+          className="pro-input h-11 pl-10"
         />
       </div>
 
       {isSearching && (
-        <section className="mb-8">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="pro-section-title flex items-center gap-2">
-              <Film className="h-4 w-4 text-yt-text-tertiary" />
-              Videos
-            </h2>
+        <section className="mb-10 sm:mb-12">
+          <div className="mb-5 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold text-white">Matching videos</h2>
             {!videosLoading && (
-              <span className="text-xs text-yt-text-tertiary">
+              <span className="text-sm text-yt-text-tertiary">
                 {videoTotal === 0
                   ? `No videos for “${debouncedQuery}”`
                   : `${videoTotal} result${videoTotal === 1 ? '' : 's'}`}
@@ -84,14 +81,13 @@ export default function CategoriesPage() {
           ) : (
             <div className="pro-empty">
               <p className="text-sm text-yt-text-secondary">
-                No videos match “{debouncedQuery}”. Try a different title or browse categories
-                below.
+                No videos match “{debouncedQuery}”. Try another title or pick a category below.
               </p>
             </div>
           )}
 
           {videoTotal > videoList.length && (
-            <div className="mt-4 text-center">
+            <div className="mt-6 text-center">
               <Link
                 href={`/search?q=${encodeURIComponent(debouncedQuery)}`}
                 className="text-sm font-medium text-white transition hover:text-yt-text-secondary"
@@ -104,25 +100,19 @@ export default function CategoriesPage() {
       )}
 
       <section>
-        <h2 className="pro-section-title mb-4">
-          {isSearching ? 'Matching categories' : 'Categories'}
+        <div className="mb-5 flex items-baseline justify-between gap-3">
+          <h2 className="text-lg font-semibold text-white">
+            {isSearching ? 'Matching categories' : 'Categories'}
+          </h2>
           {!categoriesLoading && (
-            <span className="ml-2 text-sm font-normal text-yt-text-tertiary">
-              ({filteredCategories.length})
-            </span>
+            <span className="text-sm text-yt-text-tertiary">{filteredCategories.length}</span>
           )}
-        </h2>
+        </div>
 
         {categoriesLoading ? (
-          <div className="pro-card divide-y divide-yt-border overflow-hidden">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
-                <div className="h-9 w-9 animate-pulse rounded-lg bg-yt-hover" />
-                <div className="flex-1 space-y-1.5">
-                  <div className="h-3.5 w-2/3 animate-pulse rounded bg-yt-hover" />
-                  <div className="h-3 w-1/3 animate-pulse rounded bg-yt-hover" />
-                </div>
-              </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 9 }).map((_, i) => (
+              <CategoryCardSkeleton key={i} />
             ))}
           </div>
         ) : filteredCategories.length === 0 ? (
@@ -134,34 +124,12 @@ export default function CategoriesPage() {
             </p>
           </div>
         ) : (
-          <div className="pro-card divide-y divide-yt-border overflow-hidden">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredCategories.map((cat) => {
-              const creatorLabel = getSubCategoryLabel(cat.name);
               const categoryHref = isSearching
                 ? `/categories/${cat.slug}?q=${encodeURIComponent(debouncedQuery)}`
                 : `/categories/${cat.slug}`;
-              return (
-                <Link
-                  key={cat.id}
-                  href={categoryHref}
-                  className="group flex items-center gap-3 px-4 py-3.5 transition hover:bg-yt-hover/60"
-                >
-                  <span
-                    className={cn(
-                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-yt-hover text-[11px] font-semibold uppercase tracking-wide text-white ring-1 ring-yt-border/60',
-                    )}
-                  >
-                    {cat.name.slice(0, 2)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-white transition group-hover:text-neutral-100">
-                      {cat.name}
-                    </p>
-                    <p className="truncate text-xs text-yt-text-tertiary">{creatorLabel}s</p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-yt-text-tertiary transition group-hover:text-white" />
-                </Link>
-              );
+              return <CategoryCard key={cat.id} category={cat} href={categoryHref} />;
             })}
           </div>
         )}

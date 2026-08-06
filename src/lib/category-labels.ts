@@ -9,7 +9,6 @@ export const SUBCATEGORY_LABELS: Record<string, string> = {
   'Business & Finance': 'Topic',
   'News & Sports': 'Topic',
   Kids: 'Topic',
-  Other: 'Topic',
 };
 
 export function getSubCategoryLabel(categoryName: string | null | undefined): string {
