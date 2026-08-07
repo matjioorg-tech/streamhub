@@ -153,6 +153,16 @@ export interface DashboardStats {
   failedUploads: number;
   pendingUploads: number;
   totalViews: number;
+  storage: StorageTotalsSummary;
+}
+
+export interface StorageTotalsSummary {
+  keyCount: number;
+  activeKeyCount: number;
+  usedBytes: number;
+  quotaBytes: number;
+  freeBytes: number;
+  usagePercent: number;
 }
 
 export interface UploadTask {
@@ -199,6 +209,18 @@ export interface CloudflareBucketConfigureResult {
   bucket: string;
   status: 'updated' | 'skipped' | 'failed';
   message: string;
+}
+
+export interface AdminLongRunningJobResponse {
+  accepted: boolean;
+  message: string;
+  action?: string;
+  keys?: B2StorageKey[];
+  results?: CloudflareBucketConfigureResult[];
+  keysWiped?: number;
+  deleted?: number;
+  removedVideos?: number;
+  failed?: Array<{ keyId: string; keyName: string; objectKey: string }>;
 }
 
 export interface CreateB2StorageKeyInput {

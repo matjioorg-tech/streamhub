@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import {
   useStorageKeys,
   useCreateStorageKey,
@@ -15,6 +15,7 @@ import type { CreateB2StorageKeyInput, B2StorageKey } from '@/lib/api/types';
 import { StorageDataModal } from '@/components/admin/storage-data-modal';
 import { StorageKeyEditModal } from '@/components/admin/storage-key-edit-modal';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { StorageTotalsSummaryCard, sumStorageKeys } from '@/components/admin/storage-totals-summary';
 import { formatBytes } from '@/lib/utils';
 
 const DEFAULT_QUOTA_GB = 9.5;
@@ -51,6 +52,11 @@ export default function AdminStorageKeysPage() {
     name: string;
   } | null>(null);
   const [showWipeAllConfirm, setShowWipeAllConfirm] = useState(false);
+
+  const storageTotals = useMemo(
+    () => (keys && keys.length > 0 ? sumStorageKeys(keys) : null),
+    [keys],
+  );
 
   const updateField = (field: keyof CreateB2StorageKeyInput, value: string | number) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -105,9 +111,11 @@ export default function AdminStorageKeysPage() {
     setMessage(null);
     setError(null);
     try {
-      const synced = await syncAllUsage.mutateAsync();
-      setMessage(`Synced usage for ${synced.length} storage key(s) from B2.`);
-      refetch();
+      const result = await syncAllUsage.mutateAsync();
+      setMessage(result.message);
+      if (!result.accepted) {
+        refetch();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sync all failed');
     }
@@ -117,12 +125,18 @@ export default function AdminStorageKeysPage() {
     setMessage(null);
     setError(null);
     try {
-      const results = await configureCloudflare.mutateAsync();
+      const result = await configureCloudflare.mutateAsync();
+      if (result.accepted) {
+        setMessage(result.message);
+        return;
+      }
+      const results = result.results ?? [];
       const updated = results.filter((r) => r.status === 'updated').length;
       const skipped = results.filter((r) => r.status === 'skipped').length;
       const failed = results.filter((r) => r.status === 'failed').length;
       setMessage(
-        `Cloudflare setup: ${updated} updated, ${skipped} skipped, ${failed} failed.`,
+        result.message ||
+          `Cloudflare setup: ${updated} updated, ${skipped} skipped, ${failed} failed.`,
       );
       refetch();
     } catch (err) {
@@ -147,7 +161,11 @@ export default function AdminStorageKeysPage() {
     try {
       const result = await wipeAll.mutateAsync();
       setShowWipeAllConfirm(false);
-      if (result.failed.length > 0) {
+      if (result.accepted) {
+        setMessage(result.message);
+        return;
+      }
+      if (result.failed && result.failed.length > 0) {
         setError(
           `${result.message}. ${result.failed.length} object(s) could not be deleted.`,
         );
@@ -222,6 +240,10 @@ export default function AdminStorageKeysPage() {
         <div className="mb-4 rounded-lg border border-red-800 bg-red-950/50 px-4 py-3 text-sm text-red-300">
           {error}
         </div>
+      )}
+
+      {storageTotals && (
+        <StorageTotalsSummaryCard storage={storageTotals} className="mb-6" />
       )}
 
       {showForm && (

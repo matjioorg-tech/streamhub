@@ -23,6 +23,7 @@ import type {
   GeneratedVideoMetadata,
   NearbyVideos,
   CloudflareBucketConfigureResult,
+  AdminLongRunningJobResponse,
   PlaylistDetail,
   PlaylistSummary,
   TelegramUploadMode,
@@ -275,12 +276,12 @@ export const adminApi = {
     return unwrap(response);
   },
 
-  syncAllStorageKeyUsage: async (): Promise<B2StorageKey[]> => {
+  syncAllStorageKeyUsage: async (): Promise<AdminLongRunningJobResponse> => {
     const response = await apiClient.post('/admin/storage-keys/sync-all-usage');
     return unwrap(response);
   },
 
-  configureCloudflareCaching: async (): Promise<CloudflareBucketConfigureResult[]> => {
+  configureCloudflareCaching: async (): Promise<AdminLongRunningJobResponse> => {
     const response = await apiClient.post('/admin/storage-keys/configure-cloudflare');
     return unwrap(response);
   },
@@ -352,13 +353,7 @@ export const adminApi = {
     return unwrap(response);
   },
 
-  wipeAllStorageKeys: async (): Promise<{
-    keysWiped: number;
-    deleted: number;
-    removedVideos: number;
-    failed: Array<{ keyId: string; keyName: string; objectKey: string }>;
-    message: string;
-  }> => {
+  wipeAllStorageKeys: async (): Promise<AdminLongRunningJobResponse> => {
     const response = await apiClient.post('/admin/storage-keys/wipe-all');
     return unwrap(response);
   },

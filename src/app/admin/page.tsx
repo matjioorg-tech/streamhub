@@ -19,7 +19,8 @@ import {
   useAdminDashboard,
   useConfigureCloudflareCaching,
 } from '@/hooks/use-admin';
-import type { CloudflareBucketConfigureResult } from '@/lib/api/types';
+import type { AdminLongRunningJobResponse } from '@/lib/api/types';
+import { StorageTotalsSummaryCard } from '@/components/admin/storage-totals-summary';
 import { cn } from '@/lib/utils';
 
 const quickLinks = [
@@ -73,16 +74,23 @@ export default function AdminDashboardPage() {
   const { data, isLoading } = useAdminDashboard();
   const configureCloudflare = useConfigureCloudflareCaching();
   const [cloudflareResults, setCloudflareResults] = useState<
-    CloudflareBucketConfigureResult[] | null
+    AdminLongRunningJobResponse['results'] | null
   >(null);
   const [cloudflareError, setCloudflareError] = useState<string | null>(null);
+  const [cloudflareMessage, setCloudflareMessage] = useState<string | null>(null);
 
   const handleConfigureCloudflare = async () => {
     setCloudflareError(null);
+    setCloudflareMessage(null);
     setCloudflareResults(null);
     try {
-      const results = await configureCloudflare.mutateAsync();
-      setCloudflareResults(results);
+      const result = await configureCloudflare.mutateAsync();
+      if (result.accepted) {
+        setCloudflareMessage(result.message);
+        return;
+      }
+      setCloudflareMessage(result.message);
+      setCloudflareResults(result.results ?? []);
     } catch (err) {
       setCloudflareError(err instanceof Error ? err.message : 'Cloudflare setup failed');
     }
@@ -164,6 +172,9 @@ export default function AdminDashboardPage() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">
           CDN & Storage
         </h2>
+        {data?.storage && data.storage.keyCount > 0 ? (
+          <StorageTotalsSummaryCard storage={data.storage} className="mb-4" />
+        ) : null}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
@@ -186,6 +197,12 @@ export default function AdminDashboardPage() {
               {configureCloudflare.isPending ? 'Configuring...' : 'Configure B2 for Cloudflare'}
             </button>
           </div>
+
+          {cloudflareMessage && (
+            <p className="mt-4 rounded-lg border border-green-900 bg-green-950/40 px-3 py-2 text-sm text-green-300">
+              {cloudflareMessage}
+            </p>
+          )}
 
           {cloudflareError && (
             <p className="mt-4 rounded-lg border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
