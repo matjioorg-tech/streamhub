@@ -156,6 +156,18 @@ export function useDeactivateStorageKey() {
   });
 }
 
+export function useWipeAllStorageKeys() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => adminApi.wipeAllStorageKeys(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'storage-keys'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'videos'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] });
+    },
+  });
+}
+
 export function useAdminInvitations() {
   return useQuery({
     queryKey: ['admin', 'invitations'],

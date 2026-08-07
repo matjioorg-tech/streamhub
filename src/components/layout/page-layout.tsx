@@ -38,14 +38,16 @@ function PageLayoutInner({
               isWatchPage
                 ? 'max-w-[1754px] px-0 py-0 pb-4 lg:px-6 lg:py-4'
                 : showMobileNav
-                  ? 'px-4 py-4 pb-28 lg:px-6 lg:pb-6'
+                  ? 'px-4 py-4 pb-[calc(4.75rem+env(safe-area-inset-bottom))] lg:px-6 lg:pb-6'
                   : 'px-4 py-4 lg:px-6',
               className,
             )}
           >
             <AppGuard>{children}</AppGuard>
           </main>
-          {!hideFooter && !isWatchPage && <Footer compact={showMobileNav} />}
+          {!hideFooter && !isWatchPage && (
+            <Footer compact={showMobileNav} className={showMobileNav ? 'hidden lg:block' : undefined} />
+          )}
         </div>
       </div>
       {showMobileNav && <MobileNav />}

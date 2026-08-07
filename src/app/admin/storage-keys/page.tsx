@@ -9,6 +9,7 @@ import {
   useSyncAllStorageKeyUsage,
   useConfigureCloudflareCaching,
   useDeactivateStorageKey,
+  useWipeAllStorageKeys,
 } from '@/hooks/use-admin';
 import type { CreateB2StorageKeyInput, B2StorageKey } from '@/lib/api/types';
 import { StorageDataModal } from '@/components/admin/storage-data-modal';
@@ -36,6 +37,7 @@ export default function AdminStorageKeysPage() {
   const syncAllUsage = useSyncAllStorageKeyUsage();
   const configureCloudflare = useConfigureCloudflareCaching();
   const deactivate = useDeactivateStorageKey();
+  const wipeAll = useWipeAllStorageKeys();
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<CreateB2StorageKeyInput>(emptyForm);
@@ -48,6 +50,7 @@ export default function AdminStorageKeysPage() {
     id: string;
     name: string;
   } | null>(null);
+  const [showWipeAllConfirm, setShowWipeAllConfirm] = useState(false);
 
   const updateField = (field: keyof CreateB2StorageKeyInput, value: string | number) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -138,6 +141,30 @@ export default function AdminStorageKeysPage() {
     }
   };
 
+  const runWipeAll = async () => {
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await wipeAll.mutateAsync();
+      setShowWipeAllConfirm(false);
+      if (result.failed.length > 0) {
+        setError(
+          `${result.message}. ${result.failed.length} object(s) could not be deleted.`,
+        );
+      } else {
+        setMessage(result.message);
+      }
+      refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to wipe storage data');
+    }
+  };
+
+  const wipeAllDescription =
+    keys && keys.length > 0
+      ? `This will permanently delete all files in every storage key bucket (${keys.length} key${keys.length === 1 ? '' : 's'}) and remove linked videos from the database.\n\nAPI keys and bucket configuration will be kept.\n\n${keys.map((key) => `• ${key.name} (${key.bucket})`).join('\n')}`
+      : '';
+
   return (
     <>
       <div className="mb-4 flex flex-col gap-4 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
@@ -165,6 +192,14 @@ export default function AdminStorageKeysPage() {
                 className="w-full rounded-lg border border-zinc-700 px-4 py-3 text-sm hover:bg-zinc-800 disabled:opacity-50 sm:w-auto sm:py-2"
               >
                 {syncAllUsage.isPending ? 'Syncing...' : 'Sync all'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowWipeAllConfirm(true)}
+                disabled={wipeAll.isPending}
+                className="w-full rounded-lg border border-red-900 bg-red-950/30 px-4 py-3 text-sm text-red-300 hover:bg-red-950/50 disabled:opacity-50 sm:w-auto sm:py-2"
+              >
+                {wipeAll.isPending ? 'Wiping...' : 'Wipe all stored data'}
               </button>
             </>
           )}
@@ -428,6 +463,17 @@ export default function AdminStorageKeysPage() {
           loading={deactivate.isPending}
           onCancel={() => setDeactivateTarget(null)}
           onConfirm={() => void runDeactivate()}
+        />
+      )}
+
+      {showWipeAllConfirm && keys && keys.length > 0 && (
+        <ConfirmDialog
+          title="Wipe all stored data?"
+          description={wipeAllDescription}
+          confirmLabel="Wipe all data"
+          loading={wipeAll.isPending}
+          onCancel={() => setShowWipeAllConfirm(false)}
+          onConfirm={() => void runWipeAll()}
         />
       )}
     </>

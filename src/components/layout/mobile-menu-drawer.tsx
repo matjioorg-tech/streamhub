@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Compass,
   Grid3X3,
   Heart,
   History,
   Home,
+  Search,
   Upload,
   User,
   X,
@@ -17,7 +17,7 @@ import { useSidebar } from './sidebar-context';
 
 const primaryLinks = [
   { href: '/categories', label: 'Home', icon: Home },
-  { href: '/search', label: 'Browser', icon: Compass },
+  { href: '/search', label: 'Search', icon: Search },
   { href: '/profile', label: 'Profile', icon: User },
 ];
 

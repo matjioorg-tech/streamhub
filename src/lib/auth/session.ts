@@ -10,6 +10,7 @@ export interface StoredUser {
   telegramLinked?: boolean;
   telegramLinkCode?: string | null;
   telegramLinkCodeExpiresAt?: string | null;
+  telegramUploadMode?: 'single' | 'caption' | 'session' | 'album';
 }
 
 export function getAccessToken(): string | null {

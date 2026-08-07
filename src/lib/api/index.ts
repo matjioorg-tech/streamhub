@@ -23,6 +23,9 @@ import type {
   GeneratedVideoMetadata,
   NearbyVideos,
   CloudflareBucketConfigureResult,
+  PlaylistDetail,
+  PlaylistSummary,
+  TelegramUploadMode,
 } from './types';
 
 export interface VideoQueryParams {
@@ -135,6 +138,7 @@ export const authApi = {
 
   updateProfile: async (input: {
     displayName?: string;
+    telegramUploadMode?: TelegramUploadMode;
   }): Promise<User> => {
     const response = await apiClient.patch('/auth/me', input);
     return unwrap(response);
@@ -348,6 +352,17 @@ export const adminApi = {
     return unwrap(response);
   },
 
+  wipeAllStorageKeys: async (): Promise<{
+    keysWiped: number;
+    deleted: number;
+    removedVideos: number;
+    failed: Array<{ keyId: string; keyName: string; objectKey: string }>;
+    message: string;
+  }> => {
+    const response = await apiClient.post('/admin/storage-keys/wipe-all');
+    return unwrap(response);
+  },
+
   teraboxSettings: async (): Promise<TeraboxSettings> => {
     const response = await apiClient.get('/admin/terabox');
     return unwrap(response);
@@ -363,6 +378,18 @@ export const adminApi = {
     cookie?: string;
   }): Promise<TeraboxTestResult> => {
     const response = await apiClient.post('/admin/terabox/test', input);
+    return unwrap(response);
+  },
+};
+
+export const playlistsApi = {
+  listMine: async (): Promise<PlaylistSummary[]> => {
+    const response = await apiClient.get('/playlists/mine');
+    return unwrap(response);
+  },
+
+  getBySlug: async (slug: string): Promise<PlaylistDetail> => {
+    const response = await apiClient.get(`/playlists/${slug}`);
     return unwrap(response);
   },
 };

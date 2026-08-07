@@ -117,6 +117,8 @@ export interface SubCategory {
   videoCount: number;
 }
 
+export type TelegramUploadMode = 'single' | 'caption' | 'session' | 'album';
+
 export interface User {
   id: string;
   email: string;
@@ -126,6 +128,7 @@ export interface User {
   telegramLinked?: boolean;
   telegramLinkCode?: string | null;
   telegramLinkCodeExpiresAt?: string | null;
+  telegramUploadMode?: TelegramUploadMode;
   telegramChatId?: string | null;
 }
 
@@ -271,4 +274,29 @@ export interface TeraboxTestResult {
   fileName?: string | null;
   size?: number | null;
   error?: string;
+}
+
+export interface PlaylistSummary {
+  id: string;
+  title: string;
+  slug: string;
+  description: string | null;
+  author: string | null;
+  batchSource: string | null;
+  videoCount: number;
+  category: Category | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlaylistDetail extends PlaylistSummary {
+  videos: Array<{
+    id: string;
+    title: string;
+    slug: string;
+    thumbnailUrl: string | null;
+    status: string;
+    playlistPosition: number | null;
+    createdAt: string;
+  }>;
 }
